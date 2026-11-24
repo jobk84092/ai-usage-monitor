@@ -1,10 +1,10 @@
 {
   "name": "ai-usage-monitor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check src/parse-usage.mjs && node --check src/usage-tabs.mjs && node --check src/recommend.mjs && node --check chrome-extension/dashboard.js && node --check chrome-extension/service-worker.js"
+    "check": "node --check src/parse-usage.mjs && node --check src/usage-tabs.mjs && node --check src/sync-scheduler.mjs && node --check src/recommend.mjs && node --check chrome-extension/dashboard.js && node --check chrome-extension/service-worker.js"
   }
 }

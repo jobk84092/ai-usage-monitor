@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "AI Usage Monitor",
+  "version": "1.1.1",
+  "description": "Locally tracks usage meters from your signed-in Cursor, ChatGPT, and Ollama dashboards.",
+  "permissions": ["alarms", "storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://cursor.com/*",
+    "https://chatgpt.com/*",
+    "https://ollama.com/*"
+  ],
+  "background": {
+    "scripts": ["chrome-extension/service-worker.js"],
+    "type": "module"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ai-usage-monitor@local.invalid",
+      "strict_min_version": "121.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  },
+  "action": {
+    "default_title": "Open AI Usage Monitor"
+  }
+}

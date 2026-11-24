@@ -17,7 +17,7 @@
     <li>Choose <strong>Load unpacked</strong> and select the folder containing <code>manifest.json</code>.</li>
     <li>Click the AI Usage Monitor toolbar icon to open the dashboard. Sign in to the provider sites in this browser profile, click <strong>Sync now</strong>, then pin the dashboard tab if you want it always visible.</li>
   </ol>
-  <div class="callout"><strong>Firefox:</strong> load <code>manifest.json</code> through <code>about:debugging</code> → <strong>This Firefox</strong> → <strong>Load Temporary Add-on</strong>. That temporary install is removed when Firefox closes; persistent installation still needs Mozilla signing.</div>
+  <div class="callout"><strong>Firefox:</strong> load <code>manifest.firefox.json</code> through <code>about:debugging</code> → <strong>This Firefox</strong> → <strong>Load Temporary Add-on</strong>. That temporary install is removed when Firefox closes; persistent installation still needs Mozilla signing.</div>
   <p class="note"><strong>What the accounts actually expose:</strong> Cursor and Ollama show plan-specific usage meters. The ChatGPT Usage page exposes Codex/Work/Workspace Agents/ChatGPT for Excel limits and explicitly excludes ordinary ChatGPT conversations. The dashboard keeps these units separate; it cannot produce exact subscription token totals across services.</p>
   <p class="small">No prompts, passwords, API keys, or request payloads are collected. See <code>README.md</code> for details and troubleshooting. The old manual ledger is preserved as <code>manual-ledger.html</code>.</p>
 </main>

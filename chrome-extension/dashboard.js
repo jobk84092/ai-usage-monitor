@@ -120,11 +120,14 @@ function renderRoutes() {
 }
 function renderSyncStatus() {
   const last=dataCache.lastSyncAt;
-  $('syncStatus').textContent=dataCache.syncing?'Syncing account pages…':last?`Last sync ${stamp(last)} · snapshots stay on this browser profile`:'No account sync yet';
+  const trigger=({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload'})[dataCache.lastSyncTrigger]||'';
+  const lastSync=last?`Last sync ${stamp(last)}${trigger?` (${trigger})`:''}`:'No account sync yet';
+  const alarmStatus=dataCache.autoSync===false?'auto-sync paused':dataCache.lastAlarmAt?`last hourly alarm ${stamp(dataCache.lastAlarmAt)}`:'no hourly alarm recorded yet';
+  $('syncStatus').textContent=dataCache.syncing?`Syncing account pages… · ${alarmStatus}`:`${lastSync} · ${alarmStatus} · snapshots stay on this browser profile`;
   $('syncButton').disabled=Boolean(dataCache.syncing);
   $('syncButton').textContent=dataCache.syncing?'Syncing…':'Sync now';
   $('autoSync').checked=dataCache.autoSync!==false;
-  $('syncFooter').textContent=dataCache.autoSync===false?'Auto-sync paused; use Sync now when you want a fresh reading.':'Hourly checks run while this browser is open.';
+  $('syncFooter').textContent=dataCache.autoSync===false?'Auto-sync paused; use Sync now when you want a fresh reading.':'Hourly checks require Chrome and the Mac to stay awake; alarms can be delayed.';
 }
 function render() { renderSyncStatus(); renderServices(); renderHistory(); renderRoutes(); }
 async function loadData() {

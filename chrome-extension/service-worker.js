@@ -1,12 +1,12 @@
 import { parseUsage, usagePageDiagnostics } from '../src/parse-usage.mjs';
 import { getOrCreateUsageTab } from '../src/usage-tabs.mjs';
+import { ensureHourlyAlarm, dispatchHourlyAlarm, ALARM_NAME } from '../src/sync-scheduler.mjs';
 
 const SOURCES = [
   { id: 'cursor', label: 'Cursor', url: 'https://cursor.com/dashboard/spending' },
   { id: 'chatgpt', label: 'ChatGPT', url: 'https://chatgpt.com/settings/usage' },
   { id: 'ollama', label: 'Ollama', url: 'https://ollama.com/dashboard' }
 ];
-const ALARM_NAME = 'ai-usage-hourly-sync';
 const MAX_READ_ATTEMPTS = 20;
 const READ_RETRY_MS = 1000;
 let syncPromise = null;
@@ -15,8 +15,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function ensureAlarm() {
   const { autoSync } = await browser.storage.local.get('autoSync');
-  if (autoSync !== false) browser.alarms.create(ALARM_NAME, { periodInMinutes: 60 });
-  else await browser.alarms.clear(ALARM_NAME);
+  return ensureHourlyAlarm(browser.alarms, autoSync !== false);
 }
 
 async function waitForLoad(tabId, timeoutMs = 30000) {
@@ -158,14 +157,22 @@ browser.runtime.onInstalled.addListener(async () => {
   const { autoSync } = await browser.storage.local.get('autoSync');
   await browser.storage.local.set({ autoSync: autoSync !== false });
   await ensureAlarm();
-  runSync('install').catch(() => {});
+  await runSync('install').catch(() => {});
 });
 
-browser.runtime.onStartup.addListener(() => { ensureAlarm().catch(() => {}); });
-browser.alarms.onAlarm.addListener(async alarm => {
-  if (alarm.name !== ALARM_NAME) return;
+browser.runtime.onStartup.addListener(async () => {
+  await ensureAlarm();
   const { autoSync } = await browser.storage.local.get('autoSync');
-  if (autoSync !== false) runSync('hourly').catch(() => {});
+  if (autoSync !== false) await runSync('startup').catch(() => {});
+});
+browser.alarms.onAlarm.addListener(async alarm => {
+  const { autoSync } = await browser.storage.local.get('autoSync');
+  try {
+    await dispatchHourlyAlarm(alarm, autoSync !== false, async trigger => {
+      await browser.storage.local.set({ lastAlarmAt: new Date().toISOString() });
+      return runSync(trigger);
+    });
+  } catch {}
 });
 
 browser.action.onClicked.addListener(async () => {
@@ -182,7 +189,7 @@ browser.action.onClicked.addListener(async () => {
 
 browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'get-data') {
-    browser.storage.local.get(['snapshots', 'sourceStatus', 'lastSyncAt', 'lastSyncTrigger', 'syncing', 'autoSync', 'modelRoutes'])
+    browser.storage.local.get(['snapshots', 'sourceStatus', 'lastSyncAt', 'lastSyncTrigger', 'lastAlarmAt', 'syncing', 'autoSync', 'modelRoutes'])
       .then(data => sendResponse(data));
     return true;
   }
