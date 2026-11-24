@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>AI Usage Ledger</title>
+<style>
+  :root {
+    --paper: #f6f6f2;
+    --surface: #fff;
+    --ink: #20231f;
+    --muted: #737a71;
+    --line: #dfe3da;
+    --line-strong: #c8cec3;
+    --accent: #27634c;
+    --accent-soft: #e7f0e9;
+    --warn: #97631c;
+    --warn-soft: #f8efdb;
+    --danger: #a44036;
+    --danger-soft: #f8e8e5;
+    --cursor: #5c6e7c;
+    --chatgpt: #27634c;
+    --ollama: #9a7041;
+    --mono: "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--sans);
+    color: var(--ink);
+    background: var(--paper);
+    font-synthesis: none;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .shell { width: min(1160px, calc(100% - 48px)); margin: 0 auto; padding: 24px 0 56px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line-strong); }
+  .wordmark { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .14em; font-weight: 700; text-transform: uppercase; color: #41483f; }
+  .wordmark-mark { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); font: 700 11px var(--mono); letter-spacing: -.06em; }
+  .top-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+  .month-control { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 5px; font-size: 12px; color: var(--muted); }
+  .month-control input { min-width: 128px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 13px; }
+  .button { border: 1px solid var(--line-strong); border-radius: 5px; padding: 8px 11px; background: var(--surface); font-size: 12px; font-weight: 600; transition: background .15s, border-color .15s; }
+  .button:hover { border-color: #9ca69a; background: #fafbf8; }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .button.primary:hover { background: #1f533e; }
+  .button.quiet-danger { color: var(--danger); }
+  .save-state { width: 100%; min-height: 15px; color: var(--muted); text-align: right; font-size: 10px; }
+  .intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; padding: 34px 0 22px; }
+  .eyebrow, .section-index { color: var(--muted); font: 600 10px var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+  h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 42px); line-height: 1.05; font-weight: 600; letter-spacing: -.045em; }
+  .intro-copy { max-width: 650px; margin: 0; color: #616960; font-size: 14px; line-height: 1.6; }
+  .headline-stat { min-width: 245px; padding-left: 22px; border-left: 1px solid var(--line-strong); }
+  .headline-stat .label { color: var(--muted); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .headline-stat strong { display: block; margin: 5px 0 4px; font: 600 clamp(27px, 3vw, 36px) var(--mono); letter-spacing: -.07em; }
+  .headline-stat .sub { color: var(--muted); font-size: 11px; }
+  .notice { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; margin: 2px 0 30px; border: 1px solid #d8e4d8; background: #edf3ec; color: #425347; border-radius: 5px; font-size: 12px; line-height: 1.55; }
+  .notice strong { color: #2c4937; }
+  .notice-mark { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--accent); }
+  .section { min-width: 0; }
+  .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+  .section-heading h2 { margin: 4px 0 0; font-size: 19px; font-weight: 600; letter-spacing: -.03em; }
+  .section-note { color: var(--muted); font-size: 11px; text-align: right; line-height: 1.45; }
+  .provider-list { border-top: 1px solid var(--line-strong); }
+  .provider-row { display: grid; grid-template-columns: 185px minmax(190px, 1fr) minmax(350px, 1.05fr); align-items: center; gap: 24px; padding: 17px 0; border-bottom: 1px solid var(--line); }
+  .provider-name { display: flex; align-items: center; gap: 10px; }
+  .provider-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--provider-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--provider-color) 12%, transparent); }
+  .provider-name strong { display: block; font-size: 15px; font-weight: 650; }
+  .provider-name small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+  .meter { min-width: 0; }
+  .meter-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .meter-label { color: var(--muted); font-size: 11px; }
+  .meter-value { font: 600 13px var(--mono); white-space: nowrap; }
+  .meter-value small { font: 11px var(--sans); color: var(--muted); }
+  .progress { height: 5px; overflow: hidden; background: #e8ebe5; border-radius: 99px; }
+  .progress > span { display: block; height: 100%; width: 0; background: var(--provider-color); border-radius: inherit; transition: width .25s ease; }
+  .meter-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; color: var(--muted); font-size: 10px; }
+  .meter-foot .pace { font-weight: 600; }
+  .pace.good { color: var(--accent); }
+  .pace.warn { color: var(--warn); }
+  .pace.over { color: var(--danger); }
+  .no-target { padding: 5px 0; color: var(--muted); font-size: 11px; }
+  .provider-config { display: grid; grid-template-columns: 1.05fr .82fr 1fr 1fr; gap: 7px; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field label, .field > span { color: var(--muted); font-size: 9px; font-weight: 600; letter-spacing: .045em; text-transform: uppercase; }
+  .field input, .field select, .field textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 4px; padding: 7px 8px; background: var(--surface); color: var(--ink); font-size: 11px; outline: none; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: #71927a; box-shadow: 0 0 0 2px #dce9df; }
+  .provider-row[data-provider="cursor"] { --provider-color: var(--cursor); }
+  .provider-row[data-provider="chatgpt"] { --provider-color: var(--chatgpt); }
+  .provider-row[data-provider="ollama"] { --provider-color: var(--ollama); }
+  .other-unit { margin-top: 6px; color: var(--warn); font-size: 10px; }
+  .overview-line { display: flex; flex-wrap: wrap; gap: 0; margin: 18px 0 30px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .overview-item { display: flex; align-items: baseline; gap: 8px; padding: 11px 18px 11px 0; margin-right: 18px; }
+  .overview-item strong { font: 600 14px var(--mono); }
+  .overview-item span { color: var(--muted); font-size: 11px; }
+  .workspace { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(310px, .82fr); align-items: start; gap: 34px; margin-top: 12px; }
+  .panel { min-width: 0; }
+  .panel .section-heading { min-height: 44px; }
+  .entry-form { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; padding: 14px; margin-bottom: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+  .entry-form .span-2 { grid-column: span 2; }
+  .entry-form .span-3 { grid-column: span 3; }
+  .entry-form .span-6 { grid-column: span 6; }
+  .entry-form .button-row { display: flex; align-items: end; grid-column: span 6; justify-content: space-between; gap: 10px; }
+  .entry-hint { color: var(--muted); font-size: 10px; line-height: 1.4; }
+  .table-wrap { overflow-x: auto; border-top: 1px solid var(--line-strong); }
+  table { width: 100%; border-collapse: collapse; text-align: left; }
+  th { padding: 9px 8px; color: var(--muted); font: 600 9px var(--mono); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+  td { padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: top; font-size: 11px; }
+  td.numeric { text-align: right; font: 11px var(--mono); white-space: nowrap; }
+  .model-cell strong { display: block; font-weight: 600; }
+  .model-cell small { display: block; max-width: 220px; margin-top: 3px; color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+  .provider-tag { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .provider-tag i { width: 6px; height: 6px; border-radius: 50%; background: var(--provider-color); }
+  .provider-tag[data-provider="cursor"] { --provider-color: var(--cursor); }
+  .provider-tag[data-provider="chatgpt"] { --provider-color: var(--chatgpt); }
+  .provider-tag[data-provider="ollama"] { --provider-color: var(--ollama); }
+  .icon-button { border: 0; padding: 3px 5px; border-radius: 3px; background: transparent; color: var(--muted); font-size: 11px; }
+  .icon-button:hover { color: var(--danger); background: var(--danger-soft); }
+  .empty { padding: 22px 8px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+  details.import-ollama { margin-top: 13px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--muted); }
+  details.import-ollama summary { cursor: pointer; color: #485249; font-size: 11px; font-weight: 600; }
+  .ollama-import-body { padding-top: 9px; }
+  .ollama-import-body p { margin: 0 0 8px; font-size: 10px; line-height: 1.45; }
+  .ollama-import-body textarea { width: 100%; min-height: 82px; resize: vertical; border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--surface); font: 10px var(--mono); }
+  .ollama-import-controls { display: flex; align-items: center; gap: 9px; margin-top: 7px; }
+  .route-explainer { margin: -4px 0 13px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .route-form { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 13px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
+  .route-form .full { grid-column: span 2; }
+  .route-form button { grid-column: span 2; justify-self: start; }
+  .route-list { border-top: 1px solid var(--line-strong); }
+  .route-group { padding: 13px 0 12px; border-bottom: 1px solid var(--line); }
+  .route-group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .route-purpose { color: var(--muted); font: 600 9px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .route-pick { margin-top: 4px; font-size: 14px; font-weight: 650; letter-spacing: -.02em; }
+  .route-pick small { color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: 0; }
+  .route-status { max-width: 155px; color: var(--muted); font-size: 10px; line-height: 1.45; text-align: right; }
+  .route-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .route-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 99px; color: #4c554d; font-size: 10px; }
+  .route-pill.primary { border-color: #c7dccd; background: #f0f5ef; }
+  .route-pill span { color: var(--muted); }
+  .route-pill button { border: 0; padding: 0 1px; color: #899087; background: transparent; font-size: 12px; line-height: 1; }
+  .route-pill button:hover { color: var(--danger); }
+  .footer-note { display: flex; justify-content: space-between; gap: 18px; margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; line-height: 1.5; }
+  .footer-note a { color: #4b6554; }
+  .toast { position: fixed; right: 20px; bottom: 18px; z-index: 5; max-width: min(360px, calc(100% - 40px)); padding: 10px 13px; border: 1px solid var(--line-strong); border-radius: 5px; background: #fff; box-shadow: 0 6px 24px #17201716; color: var(--ink); font-size: 12px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .2s ease; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  @media (max-width: 1000px) {
+    .provider-row { grid-template-columns: 155px minmax(180px, 1fr); gap: 14px 20px; }
+    .provider-config { grid-column: 1 / -1; }
+    .workspace { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  }
+  @media (max-width: 650px) {
+    .shell { width: min(100% - 28px, 1160px); padding-top: 14px; }
+    .topbar { align-items: flex-start; flex-direction: column; }
+    .top-controls { justify-content: flex-start; }
+    .save-state { text-align: left; }
+    .intro { align-items: flex-start; flex-direction: column; gap: 18px; padding-top: 25px; }
+    .headline-stat { min-width: 0; width: 100%; padding: 0; border: 0; }
+    .headline-stat strong { font-size: 29px; }
+    .provider-row { grid-template-columns: 1fr; gap: 12px; }
+    .provider-config { grid-column: auto; grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .entry-form { grid-template-columns: repeat(2, minmax(0,1fr)); padding: 11px; }
+    .entry-form .span-2, .entry-form .span-3 { grid-column: span 2; }
+    .entry-form .span-6, .entry-form .button-row { grid-column: span 2; }
+    .overview-item { padding-right: 12px; margin-right: 12px; }
+    .section-heading { align-items: flex-start; flex-direction: column; }
+    .section-note { text-align: left; }
+    .route-form { grid-template-columns: 1fr; }
+    .route-form .full, .route-form button { grid-column: auto; }
+    .footer-note { flex-direction: column; gap: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="wordmark-mark">AI</span><span>Personal usage ledger</span></div>
+    <div class="top-controls">
+      <label class="month-control" for="monthPicker">Month <input id="monthPicker" type="month" aria-label="Choose month"></label>
+      <button class="button" id="exportButton" type="button">Export backup</button>
+      <button class="button" id="importButton" type="button">Import backup</button>
+      <input class="sr-only" id="importFile" type="file" accept="application/json,.json">
+      <button class="button quiet-danger" id="clearMonthButton" type="button">Clear month</button>
+      <div class="save-state" id="saveState" aria-live="polite">Saved in this browser</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="pageTitle">
+      <div>
+        <div class="eyebrow" id="monthCaption">Monthly monitor</div>
+        <h1 id="pageTitle">AI usage, in one place.</h1>
+        <p class="intro-copy">Log what you can see across Cursor, ChatGPT and Ollama. Keep the token count separate from each service’s own meter, then set your preferred models and fallbacks.</p>
+      </div>
+      <div class="headline-stat">
+        <div class="label">Known tokens logged</div>
+        <strong id="knownTokens">0</strong>
+        <div class="sub" id="tokenSplit">Input 0 · output 0 · total-only 0</div>
+      </div>
+    </section>
+
+    <div class="notice" role="note"><span class="notice-mark"></span><div><strong>Manual tracker, no guessed quotas.</strong> Plan limits and usage meters differ. Set a cap only if you want a personal target; these figures are not fetched from your accounts. Data stays in this browser—use Export / Import to move it between Chrome and Firefox.</div></div>
+
+    <section class="section" aria-labelledby="metersHeading">
+      <div class="section-heading">
+        <div><div class="section-index">01 / Service meters</div><h2 id="metersHeading">Monthly budget view</h2></div>
+        <div class="section-note">Enter the meter unit and cap shown by your plan, or leave the cap blank.<br>Each service is measured separately; unlike units are never added together.</div>
+      </div>
+      <div class="provider-list" id="providerMeters"></div>
+    </section>
+
+    <div class="overview-line" aria-label="Month summary">
+      <div class="overview-item"><strong id="entryCount">0</strong><span>logged entries</span></div>
+      <div class="overview-item"><strong id="daysLeft">—</strong><span id="daysLabel">days left in month</span></div>
+      <div class="overview-item"><strong id="modelCount">0</strong><span>models with activity</span></div>
+    </div>
+
+    <div class="workspace">
+      <section class="panel" aria-labelledby="logHeading">
+        <div class="section-heading">
+          <div><div class="section-index">02 / Activity</div><h2 id="logHeading">Usage log</h2></div>
+          <div class="section-note">Only values you enter are counted.</div>
+        </div>
+        <form class="entry-form" id="entryForm">
+          <div class="field span-2"><label for="entryDate">Date</label><input id="entryDate" name="date" type="date" required></div>
+          <div class="field span-2"><label for="entryProvider">Service</label><select id="entryProvider" name="provider"></select></div>
+          <div class="field span-2"><label for="entryModel">Model</label><input id="entryModel" name="model" type="text" placeholder="Model name"></div>
+          <div class="field"><label for="inputTokens">Input tokens</label><input id="inputTokens" name="inputTokens" type="number" min="0" step="1" placeholder="optional"></div>
+          <div class="field"><label for="outputTokens">Output tokens</label><input id="outputTokens" name="outputTokens" type="number" min="0" step="1" placeholder="optional"></div>
+          <div class="field span-2"><label for="meterAmount">Meter amount <span id="meterUnitLabel" style="text-transform:none;letter-spacing:0">(tokens)</span></label><input id="meterAmount" name="amount" type="number" min="0" step="any" placeholder="optional"></div>
+          <div class="field span-3"><label for="entryNote">Note</label><input id="entryNote" name="note" type="text" maxlength="180" placeholder="Optional task or context"></div>
+          <div class="button-row"><span class="entry-hint">Add token counts, a service-meter amount, or both.</span><button class="button primary" type="submit">Log usage</button></div>
+        </form>
+        <div class="table-wrap" id="historyWrap"></div>
+        <details class="import-ollama">
+          <summary>Paste one Ollama API response to log exact token counts</summary>
+          <div class="ollama-import-body">
+            <p>Paste a non-streaming response object (or its final stream chunk). The importer reads the model, prompt token count and generated token count.</p>
+            <textarea id="ollamaJson" spellcheck="false" aria-label="Ollama response JSON" placeholder='{"model":"…","prompt_eval_count":123,"eval_count":45}'></textarea>
+            <div class="ollama-import-controls"><button class="button" id="ollamaImportButton" type="button">Log response</button><span class="entry-hint"><a href="https://github.com/ollama/ollama/blob/main/docs/api/usage.mdx" target="_blank" rel="noopener noreferrer">Ollama usage fields</a></span></div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel" aria-labelledby="routesHeading">
+        <div class="section-heading">
+          <div><div class="section-index">03 / Model choice</div><h2 id="routesHeading">My model routes</h2></div>
+        </div>
+        <p class="route-explainer">Write down your primary and backup for each kind of task. Budget nudges use your logged activity and caps only—they do not rate model quality.</p>
+        <form class="route-form" id="routeForm">
+          <div class="field"><label for="routePurpose">Use case</label><input id="routePurpose" name="purpose" type="text" maxlength="50" placeholder="Coding, research…" required></div>
+          <div class="field"><label for="routePriority">Priority</label><select id="routePriority" name="priority"><option value="primary">Primary</option><option value="backup">Backup</option></select></div>
+          <div class="field full"><label for="routeModel">Model</label><input id="routeModel" name="model" type="text" maxlength="90" placeholder="Type the model name you use" required></div>
+          <div class="field full"><label for="routeProvider">Service</label><select id="routeProvider" name="provider"></select></div>
+          <button class="button" type="submit">Add to model routes</button>
+        </form>
+        <div class="route-list" id="routeList"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer-note">
+    <span>Stored locally in this browser profile. Make a backup before clearing browser data.</span>
+    <span>Calendar-month view · reset dates are references only; they do not change the monthly totals.</span>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  'use strict';
+  const STORE_KEY = 'ai-usage-ledger-v1';
+  const PROVIDERS = [
+    { id: 'cursor', name: 'Cursor', short: 'Editor and plan meter', letter: 'C', color: 'var(--cursor)' },
+    { id: 'chatgpt', name: 'ChatGPT', short: 'ChatGPT plan meter', letter: 'G', color: 'var(--chatgpt)' },
+    { id: 'ollama', name: 'Ollama', short: 'Local model usage', letter: 'O', color: 'var(--ollama)' }
+  ];
+  const DEFAULTS = {
+    version: 1,
+    settings: {
+      cursor: { plan: '', unit: 'tokens', cap: '', reset: '' },
+      chatgpt: { plan: '', unit: 'tokens', cap: '', reset: '' },
+      ollama: { plan: 'Local', unit: 'tokens', cap: '', reset: '' }
+    },
+    entries: [],
+    routes: []
+  };
+  const $ = (id) => document.getElementById(id);
+  const copy = (value) => JSON.parse(JSON.stringify(value));
+  let state = loadState();
+  let selectedMonth = currentMonth();
+  let toastTimer;
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return copy(DEFAULTS);
+      const parsed = JSON.parse(raw);
+      return normalizeState(parsed);
+    } catch (error) {
+      return copy(DEFAULTS);
+    }
+  }
+  function normalizeState(value) {
+    const next = copy(DEFAULTS);
+    if (!value || typeof value !== 'object') return next;
+    for (const p of PROVIDERS) {
+      const s = value.settings && value.settings[p.id];
+      if (s && typeof s === 'object') {
+        next.settings[p.id] = {
+          plan: String(s.plan || ''), unit: String(s.unit || 'tokens'),
+          cap: s.cap === '' || s.cap === null || s.cap === undefined ? '' : String(s.cap),
+          reset: String(s.reset || '')
+        };
+      }
+    }
+    next.entries = Array.isArray(value.entries) ? value.entries.filter(validEntry).map(e => ({
+      id: String(e.id || makeId()), date: String(e.date), provider: e.provider,
+      model: String(e.model || ''), inputTokens: validNonnegative(e.inputTokens),
+      outputTokens: validNonnegative(e.outputTokens), amount: validNonnegative(e.amount),
+      amountUnit: String(e.amountUnit || 'tokens'), note: String(e.note || ''),
+      createdAt: String(e.createdAt || '')
+    })) : [];
+    next.routes = Array.isArray(value.routes) ? value.routes.filter(validRoute).map(r => ({
+      id: String(r.id || makeId()), purpose: String(r.purpose), model: String(r.model),
+      provider: r.provider, priority: r.priority === 'backup' ? 'backup' : 'primary'
+    })) : [];
+    return next;
+  }
+  function validEntry(e) {
+    return e && PROVIDERS.some(p => p.id === e.provider) && /^\d{4}-\d{2}-\d{2}$/.test(String(e.date || ''));
+  }
+  function validRoute(r) {
+    return r && PROVIDERS.some(p => p.id === r.provider) && String(r.purpose || '').trim() && String(r.model || '').trim();
+  }
+  function validNonnegative(n) {
+    if (n === null || n === undefined || n === '') return null;
+    const x = Number(n);
+    return Number.isFinite(x) && x >= 0 ? x : null;
+  }
+  function makeId() {
+    return globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+  function localDate(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+  function currentMonth() { return localDate().slice(0, 7); }
+  function formatNumber(number, max = 0) {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: max }).format(Number(number) || 0);
+  }
+  function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+  function providerById(id) { return PROVIDERS.find(p => p.id === id); }
+  function monthEntries() { return state.entries.filter(e => e.date.startsWith(selectedMonth)); }
+  function entryTokens(e) {
+    const split = (e.inputTokens ?? 0) + (e.outputTokens ?? 0);
+    if (e.inputTokens !== null || e.outputTokens !== null) return split;
+    if (String(e.amountUnit).toLowerCase() === 'tokens' && e.amount !== null) return e.amount;
+    return 0;
+  }
+  function tokenStats(entries) {
+    let input = 0, output = 0, totalOnly = 0;
+    for (const e of entries) {
+      if (e.inputTokens !== null || e.outputTokens !== null) {
+        input += e.inputTokens || 0;
+        output += e.outputTokens || 0;
+      } else if (String(e.amountUnit).toLowerCase() === 'tokens' && e.amount !== null) {
+        totalOnly += e.amount;
+      }
+    }
+    return { input, output, totalOnly, total: input + output + totalOnly };
+  }
+  function capValue(providerId) {
+    const raw = state.settings[providerId].cap;
+    if (raw === '' || raw === null || raw === undefined) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  function meterUsed(providerId, entries = monthEntries()) {
+    const cfg = state.settings[providerId];
+    const unit = String(cfg.unit || 'tokens').trim().toLowerCase();
+    return entries.filter(e => e.provider === providerId).reduce((sum, e) => {
+      if (e.amount !== null && String(e.amountUnit).trim().toLowerCase() === unit) return sum + e.amount;
+      if (e.amount === null && unit === 'tokens' && (e.inputTokens !== null || e.outputTokens !== null)) return sum + (e.inputTokens || 0) + (e.outputTokens || 0);
+      return sum;
+    }, 0);
+  }
+  function currentMonthDays() {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    return new Date(year, month, 0).getDate();
+  }
+  function paceInfo(providerId) {
+    const cap = capValue(providerId);
+    const used = meterUsed(providerId);
+    const unit = state.settings[providerId].unit || 'tokens';
+    if (cap === null) return { cap: null, used, unit, status: 'No target set', className: '', risk: false, pct: 0, remaining: null };
+    const pct = cap > 0 ? Math.min(100, used / cap * 100) : (used > 0 ? 100 : 0);
+    const monthNow = selectedMonth === currentMonth();
+    const elapsed = monthNow ? new Date().getDate() : currentMonth() > selectedMonth ? currentMonthDays() : 0;
+    const projection = elapsed > 0 ? (used / elapsed) * currentMonthDays() : 0;
+    const reached = cap === 0 ? used > 0 : used >= cap;
+    const ahead = monthNow && !reached && projection > cap;
+    let status = 'Within target', className = 'good';
+    if (reached) { status = 'Target reached'; className = 'over'; }
+    else if (ahead) { status = 'Above monthly pace'; className = 'warn'; }
+    return { cap, used, unit, status, className, risk: reached || ahead, pct, remaining: Math.max(0, cap - used), projection };
+  }
+  function toast(message) {
+    const box = $('toast'); box.textContent = message; box.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => box.classList.remove('show'), 2800);
+  }
+  function persist() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      $('saveState').textContent = 'Saved in this browser';
+    } catch (error) {
+      $('saveState').textContent = 'Browser storage unavailable — export a backup';
+    }
+  }
+  function renderProviderMeters() {
+    $('providerMeters').innerHTML = PROVIDERS.map(p => {
+      const cfg = state.settings[p.id];
+      const info = paceInfo(p.id);
+      const mismatched = monthEntries().filter(e => e.provider === p.id && e.amount !== null && String(e.amountUnit).trim().toLowerCase() !== String(cfg.unit || 'tokens').trim().toLowerCase()).length;
+      const capText = info.cap === null ? 'No cap' : `${formatNumber(info.cap, 2)} ${escapeHTML(info.unit)}`;
+      const meterContent = info.cap === null
+        ? `<div class="no-target">${formatNumber(info.used, 2)} ${escapeHTML(info.unit)} logged · set a target to see pace</div>`
+        : `<div class="meter-top"><span class="meter-label">Logged / target</span><span class="meter-value">${formatNumber(info.used, 2)} <small>/ ${capText}</small></span></div>
+           <div class="progress" aria-label="${escapeHTML(info.status)}"><span style="width:${Math.max(0, Math.min(100, info.pct))}%;"></span></div>
+           <div class="meter-foot"><span class="pace ${info.className}">${escapeHTML(info.status)}</span><span>${formatNumber(info.remaining, 2)} ${escapeHTML(info.unit)} left</span></div>`;
+      return `<article class="provider-row" data-provider="${p.id}" style="--provider-color:${p.color}">
+        <div class="provider-name"><span class="provider-dot"></span><div><strong>${p.name}</strong><small>${p.short}</small></div></div>
+        <div class="meter">${meterContent}${mismatched ? `<div class="other-unit">${mismatched} entr${mismatched === 1 ? 'y uses' : 'ies use'} a different unit and are not in this meter total.</div>` : ''}</div>
+        <div class="provider-config">
+          <div class="field"><label for="${p.id}-plan">Plan / note</label><input id="${p.id}-plan" data-setting="plan" data-provider="${p.id}" value="${escapeHTML(cfg.plan)}" placeholder="Optional" maxlength="50"></div>
+          <div class="field"><label for="${p.id}-unit">Meter unit</label><input id="${p.id}-unit" data-setting="unit" data-provider="${p.id}" value="${escapeHTML(cfg.unit)}" placeholder="tokens" maxlength="18"></div>
+          <div class="field"><label for="${p.id}-cap">Monthly target</label><input id="${p.id}-cap" data-setting="cap" data-provider="${p.id}" type="number" min="0" step="any" value="${escapeHTML(cfg.cap)}" placeholder="No cap"></div>
+          <div class="field"><label for="${p.id}-reset">Reset date (ref.)</label><input id="${p.id}-reset" data-setting="reset" data-provider="${p.id}" type="date" value="${escapeHTML(cfg.reset)}"></div>
+        </div>
+      </article>`;
+    }).join('');
+  }
+  function renderSummary() {
+    const entries = monthEntries();
+    const stats = tokenStats(entries);
+    $('knownTokens').textContent = formatNumber(stats.total);
+    $('tokenSplit').textContent = `Input ${formatNumber(stats.input)} · output ${formatNumber(stats.output)} · total-only ${formatNumber(stats.totalOnly)}`;
+    $('entryCount').textContent = formatNumber(entries.length);
+    const modelCount = new Set(entries.map(e => `${e.provider}:${e.model.trim().toLowerCase()}`).filter(x => !x.endsWith(':'))).size;
+    $('modelCount').textContent = formatNumber(modelCount);
+    const nowMonth = currentMonth();
+    if (selectedMonth < nowMonth) {
+      $('daysLeft').textContent = '0'; $('daysLabel').textContent = 'days left · month ended';
+    } else {
+      const left = selectedMonth === nowMonth ? currentMonthDays() - new Date().getDate() : currentMonthDays();
+      $('daysLeft').textContent = formatNumber(left); $('daysLabel').textContent = 'days left in selected month';
+    }
+    const date = new Date(`${selectedMonth}-01T12:00:00`);
+    $('monthCaption').textContent = Number.isNaN(date.getTime()) ? 'Monthly monitor' : `Monthly monitor · ${new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(date)}`;
+  }
+  function renderHistory() {
+    const entries = monthEntries().slice().sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt)));
+    if (!entries.length) {
+      $('historyWrap').innerHTML = `<div class="empty">No usage logged for this month yet. Add a session above; tokens you do not know can be left blank.</div>`;
+      return;
+    }
+    const rows = entries.map(e => {
+      const p = providerById(e.provider);
+      const tokens = entryTokens(e);
+      const tokenLabel = tokens ? formatNumber(tokens) : '—';
+      const amountLabel = e.amount === null ? '—' : `${formatNumber(e.amount, 2)} ${escapeHTML(e.amountUnit)}`;
+      return `<tr>
+        <td>${escapeHTML(e.date.slice(5))}</td>
+        <td><span class="provider-tag" data-provider="${e.provider}"><i></i>${p.name}</span></td>
+        <td class="model-cell"><strong>${escapeHTML(e.model || 'Model not specified')}</strong>${e.note ? `<small>${escapeHTML(e.note)}</small>` : ''}</td>
+        <td class="numeric">${amountLabel}</td><td class="numeric">${tokenLabel}</td>
+        <td><button class="icon-button" type="button" data-delete-entry="${escapeHTML(e.id)}" aria-label="Delete usage entry">×</button></td>
+      </tr>`;
+    }).join('');
+    $('historyWrap').innerHTML = `<table><thead><tr><th>Date</th><th>Service</th><th>Model / note</th><th style="text-align:right">Meter</th><th style="text-align:right">Tokens</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function routeRecommendation(routes) {
+    const sorted = routes.slice().sort((a, b) => (a.priority === 'primary' ? 0 : 1) - (b.priority === 'primary' ? 0 : 1));
+    const primary = sorted.find(r => r.priority === 'primary') || sorted[0];
+    const primaryInfo = paceInfo(primary.provider);
+    if (!primaryInfo.risk) {
+      return { route: primary, message: primaryInfo.cap === null ? 'Primary preference · no budget target set' : `Primary preference · ${primaryInfo.status.toLowerCase()}` };
+    }
+    const backup = sorted.find(r => r.id !== primary.id && !paceInfo(r.provider).risk);
+    if (backup) return { route: backup, message: `Primary is ${primaryInfo.status.toLowerCase()} · backup has more headroom` };
+    return { route: null, message: `Primary is ${primaryInfo.status.toLowerCase()} · add a backup or review the target` };
+  }
+  function renderRoutes() {
+    const groups = new Map();
+    for (const route of state.routes) {
+      const key = route.purpose.trim().toLowerCase();
+      if (!groups.has(key)) groups.set(key, { label: route.purpose.trim(), routes: [] });
+      groups.get(key).routes.push(route);
+    }
+    if (!groups.size) {
+      $('routeList').innerHTML = `<div class="empty">No routes yet. Add a primary and backup for a task type to get a simple budget-aware nudge here.</div>`;
+      return;
+    }
+    $('routeList').innerHTML = [...groups.values()].sort((a, b) => a.label.localeCompare(b.label)).map(group => {
+      const recommendation = routeRecommendation(group.routes);
+      const pick = recommendation.route;
+      const pickHtml = pick ? `${escapeHTML(pick.model)} <small>· ${providerById(pick.provider).name}</small>` : 'No route is within target';
+      const pills = group.routes.slice().sort((a, b) => (a.priority === 'primary' ? 0 : 1) - (b.priority === 'primary' ? 0 : 1)).map(r =>
+        `<span class="route-pill ${r.priority === 'primary' ? 'primary' : ''}">${r.priority === 'primary' ? 'Primary' : 'Backup'} · ${escapeHTML(r.model)} <span>${providerById(r.provider).name}</span><button type="button" data-delete-route="${escapeHTML(r.id)}" aria-label="Remove ${escapeHTML(r.model)} route">×</button></span>`
+      ).join('');
+      return `<article class="route-group"><div class="route-group-head"><div><div class="route-purpose">${escapeHTML(group.label)}</div><div class="route-pick">${pickHtml}</div></div><div class="route-status">${escapeHTML(recommendation.message)}</div></div><div class="route-options">${pills}</div></article>`;
+    }).join('');
+  }
+  function renderAll() {
+    $('monthPicker').value = selectedMonth;
+    renderProviderMeters(); renderSummary(); renderHistory(); renderRoutes();
+    updateEntryUnitHint();
+  }
+  function updateEntryUnitHint() {
+    const id = $('entryProvider').value || 'cursor';
+    $('meterUnitLabel').textContent = `(${state.settings[id].unit || 'tokens'})`;
+  }
+  function initializeSelects() {
+    const options = PROVIDERS.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    $('entryProvider').innerHTML = options;
+    $('routeProvider').innerHTML = options;
+  }
+  function addEntry(record) {
+    state.entries.push({ id: makeId(), date: record.date, provider: record.provider, model: record.model || '',
+      inputTokens: record.inputTokens ?? null, outputTokens: record.outputTokens ?? null,
+      amount: record.amount ?? null, amountUnit: record.amountUnit || state.settings[record.provider].unit || 'tokens',
+      note: record.note || '', createdAt: new Date().toISOString() });
+    persist(); renderAll();
+  }
+
+  $('monthPicker').value = selectedMonth;
+  $('monthPicker').addEventListener('change', event => {
+    if (/^\d{4}-\d{2}$/.test(event.target.value)) { selectedMonth = event.target.value; renderAll(); }
+  });
+  $('entryDate').value = localDate();
+  initializeSelects();
+  $('entryProvider').addEventListener('change', updateEntryUnitHint);
+  $('providerMeters').addEventListener('change', event => {
+    const input = event.target.closest('[data-setting]');
+    if (!input) return;
+    const p = input.dataset.provider, key = input.dataset.setting;
+    if (!state.settings[p]) return;
+    state.settings[p][key] = input.value;
+    if (key === 'unit' && !input.value.trim()) state.settings[p][key] = 'tokens';
+    persist(); renderAll(); toast('Provider meter settings saved.');
+  });
+  $('entryForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const inputTokens = validNonnegative(form.get('inputTokens'));
+    const outputTokens = validNonnegative(form.get('outputTokens'));
+    const amount = validNonnegative(form.get('amount'));
+    if (inputTokens === null && outputTokens === null && amount === null) {
+      toast('Enter token counts or a meter amount first.'); return;
+    }
+    const provider = String(form.get('provider'));
+    addEntry({ date: String(form.get('date')), provider, model: String(form.get('model') || '').trim(),
+      inputTokens, outputTokens, amount, amountUnit: state.settings[provider].unit,
+      note: String(form.get('note') || '').trim() });
+    event.currentTarget.reset(); $('entryDate').value = localDate(); updateEntryUnitHint(); toast('Usage entry added.');
+  });
+  $('routeForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const route = { id: makeId(), purpose: String(form.get('purpose')).trim(), model: String(form.get('model')).trim(), provider: String(form.get('provider')), priority: String(form.get('priority')) };
+    if (!route.purpose || !route.model) return;
+    state.routes.push(route); persist(); renderRoutes(); event.currentTarget.reset(); toast('Model route added.');
+  });
+  $('historyWrap').addEventListener('click', event => {
+    const button = event.target.closest('[data-delete-entry]');
+    if (!button) return;
+    const id = button.dataset.deleteEntry;
+    if (!confirm('Delete this usage entry?')) return;
+    state.entries = state.entries.filter(e => e.id !== id); persist(); renderAll(); toast('Entry deleted.');
+  });
+  $('routeList').addEventListener('click', event => {
+    const button = event.target.closest('[data-delete-route]');
+    if (!button) return;
+    state.routes = state.routes.filter(r => r.id !== button.dataset.deleteRoute); persist(); renderRoutes(); toast('Route removed.');
+  });
+  $('clearMonthButton').addEventListener('click', () => {
+    const count = monthEntries().length;
+    if (!count) { toast('There are no entries to clear for this month.'); return; }
+    if (!confirm(`Delete all ${count} usage entr${count === 1 ? 'y' : 'ies'} for ${selectedMonth}? This cannot be undone unless you exported a backup.`)) return;
+    state.entries = state.entries.filter(e => !e.date.startsWith(selectedMonth)); persist(); renderAll(); toast('Selected month cleared.');
+  });
+  $('exportButton').addEventListener('click', () => {
+    const payload = { ...state, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob); link.download = `ai-usage-backup-${selectedMonth}.json`; link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast('Backup downloaded.');
+  });
+  $('importButton').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', async event => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries) || !Array.isArray(parsed.routes)) throw new Error('This is not an AI Usage Ledger backup.');
+      if (!confirm('Importing will replace the data saved in this browser. Export a backup first if you want to keep it. Continue?')) return;
+      state = normalizeState(parsed); persist(); renderAll(); toast('Backup imported.');
+    } catch (error) { toast(error.message || 'Could not read that backup file.'); }
+    finally { event.target.value = ''; }
+  });
+  $('ollamaImportButton').addEventListener('click', () => {
+    try {
+      const obj = JSON.parse($('ollamaJson').value);
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('Paste one Ollama response object.');
+      const input = validNonnegative(obj.prompt_eval_count);
+      const output = validNonnegative(obj.eval_count);
+      if (input === null && output === null) throw new Error('This response has no prompt_eval_count or eval_count fields.');
+      const rawDate = obj.created_at ? new Date(obj.created_at) : new Date();
+      const date = Number.isNaN(rawDate.getTime()) ? localDate() : localDate(rawDate);
+      addEntry({ date, provider: 'ollama', model: String(obj.model || '').trim(), inputTokens: input, outputTokens: output,
+        amount: (input || 0) + (output || 0), amountUnit: 'tokens', note: 'Ollama API response' });
+      $('ollamaJson').value = ''; toast('Ollama token counts logged.');
+    } catch (error) { toast(error.message || 'Could not parse the Ollama response.'); }
+  });
+  renderAll();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Usage Monitor</title>
+<style>
+  :root{--bg:#f4f5f1;--surface:#fff;--ink:#20251f;--muted:#687168;--line:#dce1d9;--green:#236249;--green-soft:#e8f1eb;--amber:#93631f;--amber-soft:#f8f0de;--red:#a43f35;--red-soft:#f8e9e6;--mono:"SFMono-Regular",Menlo,Consolas,monospace;--sans:"Avenir Next","Helvetica Neue",Arial,sans-serif;font-family:var(--sans);color:var(--ink);background:var(--bg)}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg)}button,input,select{font:inherit;color:inherit}button{cursor:pointer}.shell{width:min(1120px,calc(100% - 44px));margin:0 auto;padding:24px 0 48px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-bottom:16px;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.mark{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--green);border-radius:50%;color:var(--green);font:700 10px var(--mono)}.controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.button{padding:8px 12px;border:1px solid var(--line);border-radius:5px;background:#fff;font-size:12px;font-weight:600}.button:hover{border-color:#9da89c}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.primary:hover{background:#1d523c}.auto{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px}.auto input{accent-color:var(--green)}.intro{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px 0 20px}.kicker,.section-no{color:var(--muted);font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase}h1{margin:6px 0 6px;font-size:clamp(27px,4vw,39px);font-weight:600;letter-spacing:-.045em;line-height:1.08}.sub{max-width:700px;margin:0;color:#596258;font-size:13px;line-height:1.55}.sync-status{text-align:right;color:var(--muted);font-size:11px;line-height:1.5}.notice{display:flex;gap:9px;align-items:flex-start;padding:11px 13px;margin-bottom:24px;border:1px solid #d7e5d9;border-radius:5px;background:#edf4ee;color:#435448;font-size:11px;line-height:1.5}.notice-dot{flex:none;width:7px;height:7px;margin-top:4px;border-radius:50%;background:var(--green)}.section{margin-top:22px}.section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:11px}.section-head h2{margin:4px 0 0;font-size:18px;font-weight:600;letter-spacing:-.025em}.caption{max-width:510px;color:var(--muted);font-size:10px;line-height:1.45;text-align:right}.services{border-top:1px solid #bfc8bd}.service{display:grid;grid-template-columns:155px minmax(0,1fr) 150px;gap:18px;align-items:start;padding:16px 2px;border-bottom:1px solid var(--line)}.service-name{display:flex;gap:10px;align-items:center}.dot{width:9px;height:9px;flex:none;border-radius:50%;background:var(--tone)}.service-name strong{display:block;font-size:14px}.service-name small{display:block;margin-top:3px;color:var(--muted);font-size:10px}.service-body{min-width:0}.service-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.service-plan{font-size:12px;font-weight:600}.service-updated{color:var(--muted);font-size:10px}.metrics{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.metric{min-width:130px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:#fff}.metric-label{display:block;color:var(--muted);font-size:9px;letter-spacing:.04em;text-transform:uppercase}.metric-value{display:block;margin-top:3px;font:600 13px var(--mono)}.metric-note{display:block;margin-top:3px;color:var(--muted);font-size:9px}.status{display:inline-flex;align-items:center;gap:5px;color:var(--green);font-size:10px;font-weight:600}.status::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.status.auth_required,.status.blocked,.status.unavailable,.status.unrecognized{color:var(--amber)}.status.no_data{color:var(--muted)}.status.stale{color:var(--muted)}.service-action{display:flex;justify-content:flex-end}.text-button{padding:2px 0;border:0;background:none;color:var(--green);font-size:11px;font-weight:600}.text-button:hover{text-decoration:underline}.empty-service{padding:11px 0;color:var(--muted);font-size:11px;line-height:1.45}.panel{padding:14px;border:1px solid var(--line);border-radius:5px;background:var(--surface)}.workspace{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:24px;align-items:start}.route-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;margin-bottom:12px;border:1px solid var(--line);border-radius:4px;background:#fbfcfa}.field{display:flex;flex-direction:column;gap:4px;min-width:0}.field label{color:var(--muted);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}.field input,.field select{width:100%;min-width:0;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;font-size:11px}.field.full,.route-form .full,.route-form button{grid-column:1/-1}.route-form button{justify-self:start}.route-help{margin:0 0 10px;color:var(--muted);font-size:10px;line-height:1.45}.routes{border-top:1px solid var(--line)}.route{padding:11px 0;border-bottom:1px solid var(--line)}.route-head{display:flex;justify-content:space-between;gap:12px}.route-purpose{font:600 9px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.route-choice{margin-top:4px;font-size:13px;font-weight:650}.route-choice small{font-size:10px;color:var(--muted);font-weight:400}.route-status{max-width:180px;color:var(--muted);font-size:10px;line-height:1.4;text-align:right}.route-sub{margin-top:6px;color:var(--muted);font-size:10px}.delete{margin-left:8px;border:0;background:none;color:#8a9288;font-size:12px}.delete:hover{color:var(--red)}.history-controls{display:flex;align-items:center;gap:8px}.history-controls input{padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;font-size:11px}.table-wrap{overflow:auto;border-top:1px solid var(--line)}table{width:100%;border-collapse:collapse;text-align:left}th{padding:8px;color:var(--muted);font:600 9px var(--mono);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}td{padding:8px;border-top:1px solid var(--line);font-size:10px;vertical-align:top}.mono{font-family:var(--mono);white-space:nowrap}.empty{padding:18px 4px;color:var(--muted);font-size:11px;line-height:1.5}.foot{display:flex;justify-content:space-between;gap:16px;margin-top:22px;padding-top:11px;border-top:1px solid var(--line);color:var(--muted);font-size:10px;line-height:1.5}.toast{position:fixed;right:18px;bottom:18px;padding:10px 13px;border:1px solid var(--line);border-radius:5px;background:#fff;box-shadow:0 6px 24px #17201714;font-size:11px;opacity:0;transform:translateY(7px);transition:.2s;pointer-events:none}.toast.show{opacity:1;transform:translateY(0)}
+  @media(max-width:850px){.service{grid-template-columns:140px minmax(0,1fr)}.service-action{grid-column:2;justify-content:flex-start}.workspace{grid-template-columns:1fr}}
+  @media(max-width:600px){.shell{width:calc(100% - 26px);padding-top:14px}.topbar,.intro{align-items:flex-start;flex-direction:column}.controls{justify-content:flex-start}.sync-status{text-align:left}.section-head{align-items:flex-start;flex-direction:column}.caption{text-align:left}.service{grid-template-columns:1fr;gap:8px}.service-action{grid-column:auto}.metric{flex:1 1 135px}.foot{flex-direction:column}.route-form{grid-template-columns:1fr}.route-form .full,.route-form button{grid-column:auto}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><span class="mark">AI</span><span>Usage monitor</span></div>
+    <div class="controls">
+      <label class="auto"><input type="checkbox" id="autoSync" checked> Auto-sync hourly</label>
+      <button class="button" id="exportButton" type="button">Export data</button>
+      <button class="button primary" id="syncButton" type="button">Sync now</button>
+    </div>
+  </header>
+  <main>
+    <section class="intro">
+      <div><div class="kicker">Signed-in account meters</div><h1>Usage, across your AI accounts.</h1><p class="sub">Reads the visible usage summaries from Cursor, ChatGPT’s Codex/Work/Agents/Excel limits, and Ollama. The ChatGPT usage page says ordinary chat conversations are not included. Snapshots stay in this browser profile; prompts and passwords are not saved.</p></div>
+      <div class="sync-status" id="syncStatus" aria-live="polite">Waiting for first sync…</div>
+    </section>
+    <div class="notice"><span class="notice-dot"></span><div><strong>Different services expose different meters.</strong> This page keeps service-specific limits, percentages, and credits separate. It does not invent one combined token count or judge model quality.</div></div>
+
+    <section class="section" aria-labelledby="accountsTitle">
+      <div class="section-head"><div><div class="section-no">01 / Current account usage</div><h2 id="accountsTitle">Latest readings</h2></div><div class="caption">If a service needs sign-in, use its Open page button, sign in in your browser, then Sync now. The next automatic check runs hourly while that browser is open.</div></div>
+      <div class="services" id="services"></div>
+    </section>
+
+    <section class="section workspace">
+      <div class="panel">
+        <div class="section-head"><div><div class="section-no">02 / Model choice</div><h2>Model routes</h2></div></div>
+        <p class="route-help">Set your own primary and backup models. Budget nudges use your latest account limits only; they are not quality rankings.</p>
+        <form id="routeForm" class="route-form">
+          <div class="field"><label for="purpose">Use case</label><input id="purpose" name="purpose" maxlength="50" placeholder="Coding, research…" required></div>
+          <div class="field"><label for="primaryProvider">Primary service</label><select id="primaryProvider" name="primaryProvider"></select></div>
+          <div class="field"><label for="primaryModel">Primary model</label><input id="primaryModel" name="primaryModel" maxlength="90" placeholder="Your preferred model" required></div>
+          <div class="field"><label for="backupProvider">Backup service</label><select id="backupProvider" name="backupProvider"></select></div>
+          <div class="field full"><label for="backupModel">Backup model</label><input id="backupModel" name="backupModel" maxlength="90" placeholder="Optional fallback"></div>
+          <button class="button" type="submit">Save route</button>
+        </form>
+        <div class="routes" id="routes"></div>
+      </div>
+      <div class="panel">
+        <div class="section-head"><div><div class="section-no">03 / Monthly history</div><h2>Sync snapshots</h2></div><div class="history-controls"><input type="month" id="monthFilter" aria-label="Choose month"><button class="button" id="exportMonth" type="button">Export month</button></div></div>
+        <p class="route-help">Snapshots show what each account reported at sync time. Some dashboard numbers are rolling windows, not calendar-month token totals.</p>
+        <div class="table-wrap" id="history"></div>
+      </div>
+    </section>
+  </main>
+  <footer class="foot"><span>Local browser extension storage. No credentials, prompts, or request payloads are saved.</span><span id="syncFooter">Hourly checks run only while the browser is open.</span></footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>

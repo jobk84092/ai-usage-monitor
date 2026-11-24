@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard UI Test Harness</title>
+<style>.test-banner{padding:6px 10px;background:#fff0c7;color:#573f12;border-bottom:1px solid #e6d39d;font:700 12px sans-serif;letter-spacing:.02em}</style>
+</head><body>
+<div class="test-banner">TEST HARNESS — mock WebExtension APIs, no real account data or network collection</div>
+<div id="app"></div>
+<script>
+const mock={snapshots:[],sourceStatus:{},lastSyncAt:null,lastSyncTrigger:null,syncing:false,autoSync:true,modelRoutes:[]};
+window.browser={
+  runtime:{async sendMessage(message){
+    if(message.type==='get-data') return {...mock};
+    if(message.type==='sync-now'){
+      const at=new Date().toISOString();
+      const results=[{source:'cursor',status:'auth_required',message:'Sign in to this service in your browser, then run Sync again.'},{source:'chatgpt',status:'auth_required',message:'Sign in to this service in your browser, then run Sync again.'},{source:'ollama',status:'auth_required',message:'Sign in to this service in your browser, then run Sync again.'}];
+      mock.lastSyncAt=at;mock.sourceStatus=Object.fromEntries(results.map(item=>[item.source,{status:item.status,attemptedAt:at,message:item.message||'',lastSuccessAt:null}]));
+      return {completedAt:at,results};
+    }
+    if(message.type==='set-auto-sync'){mock.autoSync=message.enabled;return {ok:true};}
+    if(message.type==='save-model-routes'){mock.modelRoutes=message.routes;return {ok:true};}
+    return {ok:true};
+  }},
+  storage:{onChanged:{addListener(){}}}
+};
+(async()=>{
+  const source=await (await fetch('/chrome-extension/dashboard.html')).text();
+  const parsed=new DOMParser().parseFromString(source,'text/html');
+  const style=document.createElement('style');style.textContent=parsed.querySelector('style').textContent;document.head.append(style);
+  document.getElementById('app').innerHTML=parsed.body.innerHTML;
+  try { await import(new URL('/chrome-extension/dashboard.js?preview=5',location.origin).href); window.__dashboardLoaded=true; }
+  catch(error) { window.__dashboardImportError=String(error?.stack||error); }
+})();
+</script>
+</body></html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Usage Monitor — Setup</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Avenir Next","Helvetica Neue",sans-serif;color:#20251f;background:#f4f5f1}*{box-sizing:border-box}body{margin:0}.page{width:min(760px,calc(100% - 32px));margin:42px auto;padding:28px;background:#fff;border:1px solid #dce1d9;border-radius:8px}.eyebrow{font:600 10px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:#687168}h1{margin:8px 0 9px;font-size:34px;line-height:1.08;letter-spacing:-.04em}.lead{max-width:670px;color:#596258;font-size:14px;line-height:1.55}.callout{margin:22px 0;padding:13px 15px;background:#edf4ee;border:1px solid #d7e5d9;border-radius:5px;font-size:12px;line-height:1.55}.steps{counter-reset:step;margin:22px 0;padding:0;list-style:none}.steps li{counter-increment:step;position:relative;padding:0 0 18px 42px;color:#394139;font-size:13px;line-height:1.55}.steps li::before{content:counter(step);position:absolute;left:0;top:0;width:26px;height:26px;display:grid;place-items:center;border:1px solid #b7c8b8;border-radius:50%;color:#236249;font:600 11px ui-monospace,monospace}.steps code{padding:2px 5px;border-radius:3px;background:#f1f3ef;font:11px ui-monospace,monospace}.note{padding-top:15px;border-top:1px solid #dce1d9;color:#687168;font-size:11px;line-height:1.55}.note strong{color:#394139}.small{margin-top:16px;color:#687168;font-size:10px}
+</style>
+</head>
+<body>
+<main class="page">
+  <div class="eyebrow">AI Usage Monitor · Setup</div>
+  <h1>One-time setup</h1>
+  <p class="lead">This file is the launcher/readme page. A plain HTML file cannot read your signed-in Cursor, ChatGPT, and Ollama pages. The extension provides that browser connection and stores parsed usage snapshots locally in each browser profile.</p>
+  <div class="callout"><strong>Install the extension folder that contains <code>manifest.json</code>.</strong> Choose the project folder you extracted, or the folder where you saved the project.</div>
+  <ol class="steps">
+    <li>In Chrome, open <code>chrome://extensions</code> and enable <strong>Developer mode</strong>.</li>
+    <li>Choose <strong>Load unpacked</strong> and select the folder containing <code>manifest.json</code>.</li>
+    <li>Click the AI Usage Monitor toolbar icon to open the dashboard. Sign in to the provider sites in this browser profile, click <strong>Sync now</strong>, then pin the dashboard tab if you want it always visible.</li>
+  </ol>
+  <div class="callout"><strong>Firefox:</strong> load <code>manifest.json</code> through <code>about:debugging</code> → <strong>This Firefox</strong> → <strong>Load Temporary Add-on</strong>. That temporary install is removed when Firefox closes; persistent installation still needs Mozilla signing.</div>
+  <p class="note"><strong>What the accounts actually expose:</strong> Cursor and Ollama show plan-specific usage meters. The ChatGPT Usage page exposes Codex/Work/Workspace Agents/ChatGPT for Excel limits and explicitly excludes ordinary ChatGPT conversations. The dashboard keeps these units separate; it cannot produce exact subscription token totals across services.</p>
+  <p class="small">No prompts, passwords, API keys, or request payloads are collected. See <code>README.md</code> for details and troubleshooting. The old manual ledger is preserved as <code>manual-ledger.html</code>.</p>
+</main>
+</body>
+</html>
