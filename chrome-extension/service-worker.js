@@ -63,8 +63,14 @@ async function readPage(tabId) {
 
 function isAuthRedirect(url) {
   try {
-    const host = new URL(url).hostname;
-    return /^(authenticator\.cursor\.sh|signin\.ollama\.com|auth\.openai\.com|accounts\.google\.com)$/.test(host);
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    if (/^(authenticator\.cursor\.sh|signin\.ollama\.com|auth\.openai\.com|accounts\.google\.com)$/.test(host)) {
+      return true;
+    }
+    // ChatGPT signed-out bounce: chatgpt.com/auth/login?next=...
+    if (host === 'chatgpt.com' && /^\/auth\//i.test(parsed.pathname)) return true;
+    return false;
   } catch { return false; }
 }
 
@@ -86,6 +92,26 @@ async function maybeFocusAuthTab(sourceId, tabId) {
   return true;
 }
 
+async function readUsageWithRetries(sourceId, tabId) {
+  let page = null;
+  let parsed = null;
+  for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt++) {
+    page = await readPage(tabId);
+    parsed = parseUsage(sourceId, page.text);
+    if (parsed.status !== 'unrecognized') break;
+    if (attempt + 1 < MAX_READ_ATTEMPTS) await delay(READ_RETRY_MS);
+  }
+  return { page, parsed };
+}
+
+function looksLikeEmptyShell(page, parsed) {
+  const chars = (page?.text || '').trim().length;
+  if (chars >= 800) return false;
+  if (page && isAuthRedirect(page.url)) return false;
+  // SPA shell / blank Settings title with no meters yet — not a real login wall.
+  return !parsed || parsed.status === 'unrecognized' || parsed.status === 'auth_required';
+}
+
 async function syncSource(source, sessionTabIds = {}) {
   let tabId = null;
   const attemptedAt = new Date().toISOString();
@@ -94,14 +120,18 @@ async function syncSource(source, sessionTabIds = {}) {
     tabId = tab.tabId;
     await rememberSessionTab(source.id, tabId);
     await waitForLoad(tabId);
-    let page = null;
-    let parsed = null;
-    for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt++) {
-      page = await readPage(tabId);
-      parsed = parseUsage(source.id, page.text);
-      if (parsed.status !== 'unrecognized') break;
-      if (attempt + 1 < MAX_READ_ATTEMPTS) await delay(READ_RETRY_MS);
+    // ChatGPT (and similar SPAs) often report status=complete before meters render.
+    if (source.id === 'chatgpt') await delay(2500);
+    let { page, parsed } = await readUsageWithRetries(source.id, tabId);
+
+    // Stuck blank session tab: hard reload once, then re-read.
+    if (looksLikeEmptyShell(page, parsed)) {
+      await browser.tabs.reload(tabId, { bypassCache: true }).catch(() => {});
+      await waitForLoad(tabId);
+      if (source.id === 'chatgpt') await delay(3500);
+      ({ page, parsed } = await readUsageWithRetries(source.id, tabId));
     }
+
     const diagnostics = usagePageDiagnostics(source.id, page?.text || '');
     const markerSummary = Object.entries(diagnostics.markers)
       .map(([marker, present]) => `${marker}=${present ? 'yes' : 'no'}`)
@@ -135,6 +165,17 @@ async function syncSource(source, sessionTabIds = {}) {
       };
     }
     if (parsed?.status === 'auth_required' || (page && isAuthRedirect(page.url))) {
+      // Tiny page with a stray "Log in" string after reload is often still a blank shell.
+      if (diagnostics.visibleChars < 800 && !isAuthRedirect(page?.url || '')) {
+        await maybeFocusAuthTab(source.id, tabId);
+        return {
+          source: source.id,
+          status: 'unrecognized',
+          attemptedAt,
+          sessionTabId: tabId,
+          message: `ChatGPT usage page stayed nearly empty after reload (${diagnostics.visibleChars} characters; markers: ${markerSummary}). Leave the open Settings → Usage tab signed in, wait for meters to appear, then Sync now.`
+        };
+      }
       await maybeFocusAuthTab(source.id, tabId);
       return {
         source: source.id,
