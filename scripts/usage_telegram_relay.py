@@ -89,19 +89,28 @@ def notify_telegram(message: str) -> None:
 
 def publish_to_contabo(local_json: Path) -> None:
     remote = "/opt/agent-office/data/ai-usage/latest.json"
-    subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "ConnectTimeout=12",
-            "-o",
-            "BatchMode=yes",
-            "contabo",
-            f"mkdir -p /opt/agent-office/data/ai-usage && cat > {remote}",
-        ],
-        input=local_json.read_bytes(),
-        check=False,
+    mkdir = subprocess.run(
+        ["ssh", "-o", "ConnectTimeout=12", "-o", "BatchMode=yes", "contabo",
+         "mkdir -p /opt/agent-office/data/ai-usage"],
+        capture_output=True, text=True, check=False,
     )
+    if mkdir.returncode != 0:
+        sys.stderr.write(f"contabo mkdir failed: {mkdir.stderr or mkdir.stdout}\n")
+    scp = subprocess.run(
+        ["scp", "-o", "ConnectTimeout=12", "-o", "BatchMode=yes",
+         str(local_json), f"contabo:{remote}"],
+        capture_output=True, text=True, check=False,
+    )
+    if scp.returncode != 0:
+        # Fallback: pipe through ssh cat
+        piped = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=12", "-o", "BatchMode=yes", "contabo",
+             f"cat > {remote}"],
+            input=local_json.read_bytes(),
+            capture_output=True, check=False,
+        )
+        if piped.returncode != 0:
+            sys.stderr.write(f"contabo publish failed: {scp.stderr or piped.stderr}\n")
 
 
 def should_notify(payload: dict, state: dict, force: bool) -> bool:
