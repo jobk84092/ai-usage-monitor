@@ -6,7 +6,7 @@
 <div id="app"></div>
 <script>
 const mock={snapshots:[],sourceStatus:{},lastSyncAt:null,lastSyncTrigger:null,syncing:false,autoSync:true,modelRoutes:[]};
-window.browser={
+window.chrome={
   runtime:{async sendMessage(message){
     if(message.type==='get-data') return {...mock};
     if(message.type==='sync-now'){

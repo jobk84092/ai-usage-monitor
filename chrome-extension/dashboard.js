@@ -1,5 +1,7 @@
+import { getExtensionApi } from '../src/extension-api.mjs';
 import { chooseBudgetRoute } from '../src/recommend.mjs';
 
+const browser = getExtensionApi();
 const SOURCES = [
   { id: 'cursor', name: 'Cursor', blurb: 'Plan and model-use limits', color: '#586c7c' },
   { id: 'chatgpt', name: 'ChatGPT tools', blurb: 'Codex / Work / Agents / Excel limits', color: '#25644a' },

@@ -19,6 +19,10 @@ A local browser extension with an HTML dashboard. Chrome 148+ uses `manifest.jso
 
 Firefox’s temporary add-on installation is for testing and is removed when Firefox closes. **A persistent Firefox installation is not ready yet:** the extension needs Mozilla signing before it can be installed normally in the release browser. Chrome and Firefox keep separate local snapshots and each profile needs its own sign-ins.
 
+## Cross-platform runtime
+
+The extension uses the native `chrome` API in Chrome (including Chrome on macOS) and the native `browser` API in Firefox through one shared adapter. If you replace files in an unpacked install, click **Reload** for the extension in `chrome://extensions` before reopening the dashboard. Do not open `dashboard.html` as a `file://` page; it needs the extension runtime and its local storage.
+
 ## What it reads
 
 The collector first reuses an already-open matching provider usage page in this browser profile, preserving its signed-in session. If none is open, it creates a temporary background tab, then closes only the tab it created. It parses displayed usage summaries only:

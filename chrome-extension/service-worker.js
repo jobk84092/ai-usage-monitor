@@ -1,7 +1,9 @@
+import { getExtensionApi } from '../src/extension-api.mjs';
 import { parseUsage, usagePageDiagnostics } from '../src/parse-usage.mjs';
 import { getOrCreateUsageTab } from '../src/usage-tabs.mjs';
 import { ensureHourlyAlarm, dispatchHourlyAlarm, ALARM_NAME } from '../src/sync-scheduler.mjs';
 
+const browser = getExtensionApi();
 const SOURCES = [
   { id: 'cursor', label: 'Cursor', url: 'https://cursor.com/dashboard/spending' },
   { id: 'chatgpt', label: 'ChatGPT', url: 'https://chatgpt.com/settings/usage' },
