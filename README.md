@@ -39,4 +39,18 @@ These services do not expose one comparable token meter: each account reports it
 
 Auto-sync runs hourly while Chrome is open. On browser startup, dashboard open, or Mac wake from idle, the extension repairs a missing hourly alarm and catches up if the last sync is overdue. Provider pages may take up to about 20 seconds to render during a sync. Sign-in cannot be automated past provider login screens; after you sign in once in this profile, session tabs are left open so later hourly syncs reuse that browser session. If a service shows Sign-in needed or a security check, use **Open**, finish the normal provider flow yourself, then **Sync now**. A failed-parse diagnostic includes only visible-character count and marker presence—not page text or usage values.
 
+After each successful sync the extension posts a compact export to a local relay at `http://127.0.0.1:8792/export` (and falls back to `Downloads/ai-usage-monitor/latest.json`). The relay saves the file, copies it to Contabo for Telegram asks (`usage`), and sends a tidy hourly digest to Telegram on scheduled syncs.
+
+Install the relay:
+
+```bash
+# Mac
+bash scripts/install_telegram_relay_mac.sh
+
+# HP Ubuntu
+bash scripts/install_telegram_relay_hp.sh
+```
+
+On Contabo, Hermes answers Telegram **usage** / **AI usage** via `python3 /opt/agent-office/scripts/ai_usage/show_usage.py`. A Contabo cron can also run `scripts/ai_usage/hourly_notify.py` as a backup sender.
+
 Use **Export data** to back up snapshots and model routes. Removing the extension or clearing its site data can delete locally stored readings. Run the included tests with `npm test` and syntax checks with `npm run check`.

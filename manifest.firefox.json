@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "AI Usage Monitor",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Locally tracks usage meters from your signed-in Cursor, ChatGPT, and Ollama dashboards.",
-  "permissions": ["alarms", "storage", "tabs", "scripting", "idle"],
+  "permissions": ["alarms", "storage", "tabs", "scripting", "idle", "downloads"],
   "host_permissions": [
     "https://cursor.com/*",
     "https://chatgpt.com/*",
-    "https://ollama.com/*"
+    "https://ollama.com/*",
+    "http://127.0.0.1:8792/*"
   ],
   "background": {
     "scripts": ["chrome-extension/service-worker.js"],

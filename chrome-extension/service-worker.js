@@ -2,6 +2,8 @@ import { getExtensionApi } from '../src/extension-api.mjs';
 import { parseUsage, usagePageDiagnostics } from '../src/parse-usage.mjs';
 import { ensurePersistentUsageTab } from '../src/usage-tabs.mjs';
 import { ensureHourlyAlarm, prepareDashboardSync, dispatchHourlyAlarm, isSyncOverdue, ALARM_NAME } from '../src/sync-scheduler.mjs';
+import { buildExportPayload } from '../src/telegram-summary.mjs';
+import { exportLatestSnapshot } from '../src/export-latest.mjs';
 
 const browser = getExtensionApi();
 const SOURCES = [
@@ -189,12 +191,27 @@ async function performSync(trigger = 'manual') {
   const cutoff = Date.now() - 120 * 24 * 60 * 60 * 1000;
   const recent = snapshots.filter(item => Date.parse(item.capturedAt) >= cutoff).slice(-5000);
   const completedAt = new Date().toISOString();
+  const { exportHost = '' } = await browser.storage.local.get('exportHost');
+  const exportPayload = buildExportPayload({
+    snapshots: recent,
+    sourceStatus,
+    lastSyncAt: completedAt,
+    lastSyncTrigger: trigger,
+    host: exportHost || (globalThis.navigator?.userAgent?.includes('Linux') ? 'hp' : 'mac'),
+    exportedAt: completedAt
+  });
+  const exportResult = await exportLatestSnapshot({
+    payload: exportPayload,
+    downloadsApi: browser.downloads
+  }).catch(error => ({ ok: false, reason: String(error?.message || error) }));
   await browser.storage.local.set({
     snapshots: recent,
     sourceStatus,
     sessionTabIds: nextSessionTabIds,
     lastSyncAt: completedAt,
     lastSyncTrigger: trigger,
+    lastExport: exportPayload,
+    lastExportResult: exportResult,
     syncing: false,
     syncStartedAt: null,
     syncError: ''
