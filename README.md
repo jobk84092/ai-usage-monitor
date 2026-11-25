@@ -8,8 +8,8 @@ A local browser extension with an HTML dashboard. Chrome 148+ uses `manifest.jso
 2. Turn on **Developer mode**.
 3. Choose **Load unpacked** and select the extracted project folder containing `manifest.json`.
 4. Click the AI Usage Monitor toolbar icon to open its dashboard. Pin the extension from Chrome’s puzzle-piece menu; right-click the dashboard tab and choose **Pin** if you want it kept at the left.
-5. Sign in to Cursor, ChatGPT, and Ollama in this browser profile. Sign-ins in other profiles do not transfer.
-6. Click **Sync now**. Connected or No data in range means the page was reached. Hourly syncing runs while Chrome and the Mac are awake.
+5. Sign in to Cursor, ChatGPT, and Ollama in **this same Chrome profile** (the one where the extension is loaded). Sign-ins in other profiles do not transfer.
+6. Click **Sync now**. The extension keeps one background session tab per service so the browser session stays signed in. Do not close those tabs if you want hourly sync to keep working without re-auth. Connected or No data in range means the page was reached.
 
 ## Install in Firefox
 
@@ -37,6 +37,6 @@ Snapshots and model routes are stored locally in that browser profile. The exten
 
 These services do not expose one comparable token meter: each account reports its own plan-specific limits and credits. The dashboard keeps each unit separate; it does not create exact cross-service subscription token totals. Monthly history is a timeline of snapshots, not a reconstructed calendar-month total. Model-route nudges use measured remaining percentages only and do not rank model quality.
 
-Auto-sync runs hourly while Chrome and the Mac are awake; macOS sleep pauses checks, and Chrome may delay alarms. On browser startup, the extension checks the saved alarm and runs an immediate sync. Provider pages may take up to about 20 seconds to render during a manual sync. If a service requires sign-in or shows a security check, use its **Open** button and complete the normal provider flow yourself; do not bypass the check. Then click **Sync now**. A failed-parse diagnostic includes only visible-character count and marker presence—not page text or usage values.
+Auto-sync runs hourly while Chrome is open. On browser startup, dashboard open, or Mac wake from idle, the extension repairs a missing hourly alarm and catches up if the last sync is overdue. Provider pages may take up to about 20 seconds to render during a sync. Sign-in cannot be automated past provider login screens; after you sign in once in this profile, session tabs are left open so later hourly syncs reuse that browser session. If a service shows Sign-in needed or a security check, use **Open**, finish the normal provider flow yourself, then **Sync now**. A failed-parse diagnostic includes only visible-character count and marker presence—not page text or usage values.
 
 Use **Export data** to back up snapshots and model routes. Removing the extension or clearing its site data can delete locally stored readings. Run the included tests with `npm test` and syntax checks with `npm run check`.

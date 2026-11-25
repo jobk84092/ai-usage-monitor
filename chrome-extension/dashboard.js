@@ -122,19 +122,23 @@ function renderRoutes() {
 }
 function renderSyncStatus() {
   const last=dataCache.lastSyncAt;
-  const trigger=({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload'})[dataCache.lastSyncTrigger]||'';
+  const trigger=({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload',recovery:'dashboard recovery',wake:'Mac wake'})[dataCache.lastSyncTrigger]||'';
   const lastSync=last?`Last sync ${stamp(last)}${trigger?` (${trigger})`:''}`:'No account sync yet';
-  const alarmStatus=dataCache.autoSync===false?'auto-sync paused':dataCache.lastAlarmAt?`last hourly alarm ${stamp(dataCache.lastAlarmAt)}`:'no hourly alarm recorded yet';
-  $('syncStatus').textContent=dataCache.syncing?`Syncing account pages… · ${alarmStatus}`:`${lastSync} · ${alarmStatus} · snapshots stay on this browser profile`;
+  const alarm=dataCache.hourlyAlarm;
+  const alarmStatus=dataCache.autoSync===false?'auto-sync paused':dataCache.schedulerError?'hourly alarm setup failed':!alarm?'hourly alarm missing':alarm.scheduledTime?`next hourly alarm ${stamp(alarm.scheduledTime)}`:'hourly alarm scheduled';
+  const lastAlarm=dataCache.lastAlarmAt?`last alarm ${stamp(dataCache.lastAlarmAt)}`:'';
+  $('syncStatus').textContent=dataCache.syncing?`Syncing account pages… · ${alarmStatus}`:`${lastSync} · ${alarmStatus}${lastAlarm?` · ${lastAlarm}`:''} · snapshots stay on this browser profile`;
   $('syncButton').disabled=Boolean(dataCache.syncing);
   $('syncButton').textContent=dataCache.syncing?'Syncing…':'Sync now';
   $('autoSync').checked=dataCache.autoSync!==false;
-  $('syncFooter').textContent=dataCache.autoSync===false?'Auto-sync paused; use Sync now when you want a fresh reading.':'Hourly checks require Chrome and the Mac to stay awake; alarms can be delayed.';
+  const error=dataCache.schedulerError||dataCache.syncError;
+  $('syncFooter').textContent=error?`Sync issue: ${error}`:dataCache.autoSync===false?'Auto-sync paused; use Sync now when you want a fresh reading.':'Hourly alarm + Mac-wake recovery. Provider session tabs stay open in this Chrome profile so sign-in persists across syncs.';
 }
 function render() { renderSyncStatus(); renderServices(); renderHistory(); renderRoutes(); }
 async function loadData() {
-  const data=await browser.runtime.sendMessage({type:'get-data'}).catch(()=>null);
-  dataCache=data||dataCache;
+  const data=await browser.runtime.sendMessage({type:'get-data'}).catch(error=>({error:String(error?.message||error)}));
+  if(data?.error){dataCache={...dataCache,syncError:data.error};}
+  else if(data)dataCache={...dataCache,...data};
   render();
 }
 function toast(message) {
@@ -168,7 +172,7 @@ $('autoSync').addEventListener('change',async event=>{
 });
 $('services').addEventListener('click',event=>{
   const button=event.target.closest('[data-open-source]');if(!button)return;
-  send({type:'open-source',source:button.dataset.openSource}).then(()=>toast('Opened the service in a new tab. Sign in there, then sync again.'));
+  send({type:'open-source',source:button.dataset.openSource}).then(()=>toast('Opened the session tab. Sign in once in this Chrome profile, then Sync now.'));
 });
 $('routeForm').addEventListener('submit',async event=>{
   event.preventDefault();const formEl=event.currentTarget;const fd=new FormData(formEl);
@@ -187,4 +191,4 @@ $('exportButton').addEventListener('click',()=>downloadJSON(`ai-usage-snapshots-
 $('exportMonth').addEventListener('click',()=>downloadJSON(`ai-usage-${$('monthFilter').value}.json`,{month:$('monthFilter').value,snapshots:monthSnapshots()}));
 browser.storage.onChanged.addListener(()=>loadData());
 loadData();
-setInterval(loadData,5000);
+setInterval(loadData,5*60*1000);
