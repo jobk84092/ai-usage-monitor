@@ -289,7 +289,8 @@ browser.action.onClicked.addListener(async () => {
 
 browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'get-data') {
-    browser.storage.local.get(['snapshots', 'sourceStatus', 'lastSyncAt', 'lastSyncTrigger', 'lastAlarmAt', 'syncing', 'syncStartedAt', 'autoSync', 'modelRoutes', 'syncError', 'schedulerError', 'sessionTabIds'])
+    const allowRecovery = message.repair === true;
+    browser.storage.local.get(['snapshots', 'sourceStatus', 'lastSyncAt', 'lastSyncTrigger', 'lastAlarmAt', 'syncing', 'syncStartedAt', 'autoSync', 'modelRoutes', 'syncError', 'schedulerError', 'sessionTabIds', 'lastRecoveryAt'])
       .then(async data => {
         const scheduler = await prepareDashboardSync({
           alarms: browser.alarms,
@@ -297,7 +298,14 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           lastSyncAt: data.lastSyncAt,
           syncing: data.syncing,
           syncStartedAt: data.syncStartedAt,
-          runSync,
+          lastRecoveryAt: data.lastRecoveryAt,
+          allowRecovery,
+          runSync: async trigger => {
+            if (trigger === 'recovery') {
+              await browser.storage.local.set({ lastRecoveryAt: new Date().toISOString() });
+            }
+            return runSync(trigger);
+          },
           resetStaleSync: () => browser.storage.local.set({ syncing: false, syncStartedAt: null })
         });
         await recordSchedulerError(scheduler.schedulerError ? new Error(scheduler.schedulerError) : null);

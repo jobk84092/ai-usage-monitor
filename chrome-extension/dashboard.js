@@ -135,8 +135,9 @@ function renderSyncStatus() {
   $('syncFooter').textContent=error?`Sync issue: ${error}`:dataCache.autoSync===false?'Auto-sync paused; use Sync now when you want a fresh reading.':'Hourly alarm + Mac-wake recovery. Provider session tabs stay open in this Chrome profile so sign-in persists across syncs.';
 }
 function render() { renderSyncStatus(); renderServices(); renderHistory(); renderRoutes(); }
-async function loadData() {
-  const data=await browser.runtime.sendMessage({type:'get-data'}).catch(error=>({error:String(error?.message||error)}));
+async function loadData({repair=false}={}) {
+  // repair:true only on first open / rare interval — storage.onChanged must not re-trigger recovery syncs
+  const data=await browser.runtime.sendMessage({type:'get-data',repair}).catch(error=>({error:String(error?.message||error)}));
   if(data?.error){dataCache={...dataCache,syncError:data.error};}
   else if(data)dataCache={...dataCache,...data};
   render();
@@ -189,6 +190,6 @@ $('routes').addEventListener('click',async event=>{
 });
 $('exportButton').addEventListener('click',()=>downloadJSON(`ai-usage-snapshots-${currentMonth()}.json`,{exportedAt:new Date().toISOString(),snapshots:dataCache.snapshots||[],sourceStatus:dataCache.sourceStatus||{},modelRoutes:dataCache.modelRoutes||[]}));
 $('exportMonth').addEventListener('click',()=>downloadJSON(`ai-usage-${$('monthFilter').value}.json`,{month:$('monthFilter').value,snapshots:monthSnapshots()}));
-browser.storage.onChanged.addListener(()=>loadData());
-loadData();
-setInterval(loadData,5*60*1000);
+browser.storage.onChanged.addListener(()=>loadData({repair:false}));
+loadData({repair:true});
+setInterval(()=>loadData({repair:true}),15*60*1000);

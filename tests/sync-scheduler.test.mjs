@@ -191,9 +191,20 @@ test('dashboard health check does not start duplicate or disabled recovery syncs
   const disabled = await prepareDashboardSync({
     alarms, autoSyncEnabled: false, lastSyncAt: staleAt, syncing: false, runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
   });
+  const noRepair = await prepareDashboardSync({
+    alarms, autoSyncEnabled: true, lastSyncAt: staleAt, syncing: false, allowRecovery: false, runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
+  });
+  const coolingDown = await prepareDashboardSync({
+    alarms, autoSyncEnabled: true, lastSyncAt: staleAt, syncing: false,
+    lastRecoveryAt: '2026-11-25T11:50:00.000Z',
+    runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
+  });
 
   assert.equal(alreadySyncing.recoveryDue, false);
   assert.equal(disabled.recoveryDue, false);
+  assert.equal(noRepair.recoveryDue, false);
+  assert.equal(coolingDown.recoveryDue, false);
+  assert.equal(coolingDown.coolingDown, true);
   assert.equal(disabled.hourlyAlarm, null);
   assert.deepEqual(syncCalls, []);
 });

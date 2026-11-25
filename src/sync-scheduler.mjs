@@ -2,6 +2,8 @@ export const ALARM_NAME = 'ai-usage-hourly-sync';
 export const ALARM_PERIOD_MINUTES = 60;
 export const SYNC_STALE_MS = ALARM_PERIOD_MINUTES * 60 * 1000;
 export const SYNC_STUCK_AFTER_MS = 5 * 60 * 1000;
+/** Prevent dashboard storage churn from starting recovery syncs back-to-back. */
+export const RECOVERY_COOLDOWN_MS = 15 * 60 * 1000;
 
 export function hourlyAlarmOptions(userAgent = globalThis.navigator?.userAgent || '') {
   const options = {
@@ -43,7 +45,24 @@ export function isSyncStuck(syncing, syncStartedAt, now = Date.now()) {
   return !Number.isFinite(startedAt) || now - startedAt >= SYNC_STUCK_AFTER_MS;
 }
 
-export async function prepareDashboardSync({ alarms, autoSyncEnabled, lastSyncAt, syncing, syncStartedAt, runSync, resetStaleSync, now = Date.now() }) {
+export function isRecoveryCoolingDown(lastRecoveryAt, now = Date.now()) {
+  if (lastRecoveryAt === null || lastRecoveryAt === undefined || lastRecoveryAt === '') return false;
+  const last = typeof lastRecoveryAt === 'number' ? lastRecoveryAt : Date.parse(lastRecoveryAt);
+  return Number.isFinite(last) && now - last < RECOVERY_COOLDOWN_MS;
+}
+
+export async function prepareDashboardSync({
+  alarms,
+  autoSyncEnabled,
+  lastSyncAt,
+  syncing,
+  syncStartedAt,
+  runSync,
+  resetStaleSync,
+  allowRecovery = true,
+  lastRecoveryAt = null,
+  now = Date.now()
+}) {
   let hourlyAlarm = null;
   let schedulerError = '';
   try {
@@ -53,17 +72,24 @@ export async function prepareDashboardSync({ alarms, autoSyncEnabled, lastSyncAt
   }
 
   const staleSync = isSyncStuck(syncing, syncStartedAt, now);
-  if (staleSync && resetStaleSync) {
+  if (allowRecovery && staleSync && resetStaleSync) {
     try { await resetStaleSync(); }
     catch (error) { schedulerError ||= String(error?.message || error); }
   }
 
-  const recoveryDue = autoSyncEnabled !== false && (staleSync || (syncing !== true && isSyncOverdue(lastSyncAt, now)));
+  const overdue = syncing !== true && isSyncOverdue(lastSyncAt, now);
+  const coolingDown = isRecoveryCoolingDown(lastRecoveryAt, now);
+  const recoveryDue = Boolean(
+    allowRecovery &&
+    autoSyncEnabled !== false &&
+    !coolingDown &&
+    (staleSync || overdue)
+  );
   if (recoveryDue) {
     try { Promise.resolve(runSync('recovery')).catch(() => {}); }
     catch {}
   }
-  return { hourlyAlarm, schedulerError, recoveryDue, staleSync };
+  return { hourlyAlarm, schedulerError, recoveryDue, staleSync, coolingDown };
 }
 
 export async function dispatchHourlyAlarm(alarm, autoSyncEnabled, runSync) {
