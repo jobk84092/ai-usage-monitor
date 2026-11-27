@@ -28,7 +28,7 @@ The services count different things. Monthly history is a series of snapshots, n
 
 Snapshots, sync activity, and model routes stay in extension storage in this profile. The extension parses the visible usage page; it does not store raw page text, prompts, passwords, API keys, or cookies. An unrecognized-page diagnostic records character count and whether expected meter labels were found.
 
-After saving each check locally, the extension tries to send a compact snapshot to the loopback relay at `http://127.0.0.1:8792/export`. If delivery fails, the snapshot stays in extension storage. Sync never opens a download dialog; JSON downloads only happen when you choose an export button. **The relay is a separate, optional installation.** When installed and configured, it can publish the usage snapshot to Contabo and send a Telegram digest. Use **Export data** to back up the dashboard's history and routes.
+After saving each check locally, the extension tries to send a compact snapshot to the loopback relay at `http://127.0.0.1:8792/export`. If delivery fails, the snapshot stays in extension storage. Sync never opens a download dialog; JSON downloads only happen when you choose an export button. **The relay is a separate, optional installation.** When installed and configured, it keeps its local snapshot under `~/.local/share/ai-usage-monitor`, not in Downloads. It can publish the snapshot to Contabo and send a Telegram digest. Use **Export data** to back up the dashboard's history and routes.
 
 Relay installer: `bash scripts/install_telegram_relay_mac.sh` on macOS or `bash scripts/install_telegram_relay_hp.sh` on the HP. Read the script and configure its destinations before enabling it.
 
@@ -37,6 +37,7 @@ Relay installer: `bash scripts/install_telegram_relay_mac.sh` on macOS or `bash 
 ```sh
 npm test
 npm run check
+python -B -m unittest discover -s tests -p test_usage_relay.py
 ```
 
 For the Chrome smoke test, install Python Playwright in your development environment, then run:

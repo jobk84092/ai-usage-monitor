@@ -130,14 +130,6 @@ def handle_payload(payload: dict, data_dir: Path, force_notify: bool = False) ->
     state_path = data_dir / STATE_NAME
     state = _load_state(state_path)
     latest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    # Also drop a Downloads-compatible copy when possible
-    downloads = Path.home() / "Downloads" / "ai-usage-monitor"
-    try:
-        downloads.mkdir(parents=True, exist_ok=True)
-        (downloads / "latest.json").write_text(latest.read_text(encoding="utf-8"), encoding="utf-8")
-    except Exception:
-        pass
-
     publish_to_contabo(latest)
     notified = False
     if should_notify(payload, state, force_notify):
