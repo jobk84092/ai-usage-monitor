@@ -11,6 +11,9 @@ export async function postToLocalRelay(url, payload, fetchImpl = globalThis.fetc
   try {
     const response = await fetchImpl(url, {
       method: 'POST',
+      credentials: 'omit',
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });

@@ -29,7 +29,7 @@
     <div class="notice"><span class="notice-dot"></span><div><strong>Different services expose different meters.</strong> This page keeps service-specific limits, percentages, and credits separate. It does not invent one combined token count or judge model quality.</div></div>
 
     <section class="section" aria-labelledby="accountsTitle">
-      <div class="section-head"><div><div class="section-no">01 / Current account usage</div><h2 id="accountsTitle">Latest readings</h2></div><div class="caption">Sign in once per service in this Chrome profile. Session tabs stay open so hourly sync reuses them. Use Open only if a service shows Sign-in needed.</div></div>
+      <div class="section-head"><div><div class="section-no">01 / Current account usage</div><h2 id="accountsTitle">Latest readings</h2></div><div class="caption">Sign in to each service in this browser profile. Checks open their own temporary tabs, so you don't have to keep these pages open.</div></div>
       <div class="services" id="services"></div>
     </section>
 
@@ -54,7 +54,13 @@
       </div>
     </section>
   </main>
-  <footer class="foot"><span>Local browser extension storage. No credentials, prompts, or request payloads are saved.</span><span id="syncFooter">Hourly checks run only while the browser is open.</span></footer>
+  <details class="section panel">
+    <summary><strong>Sync activity</strong></summary>
+    <p class="route-help" id="scheduledResult"></p>
+    <ul class="route-help" id="recentChecks"></ul>
+    <p class="route-help" id="deliveryStatus"></p>
+  </details>
+  <footer class="foot"><span id="buildVersion"></span><span id="syncFooter">Hourly checks run only while the browser is open.</span></footer>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="dashboard.js"></script>

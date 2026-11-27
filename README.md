@@ -1,56 +1,51 @@
-# AI Usage Monitor (Chrome + Firefox)
+# AI Usage Monitor
 
-A local browser extension with an HTML dashboard. Chrome 148+ uses `manifest.json`; Firefox 121+ uses the separate `manifest.firefox.json`. A plain `file://` page cannot safely read signed-in account pages; the extension is the browser bridge. The Firefox build is prepared, but its runtime has not been verified yet.
+A browser extension that shows the usage meters on your signed-in Cursor, ChatGPT, and Ollama accounts. It keeps a history of readings in your browser and shows when a check actually ran. No build step is required to load it.
 
-## Install in Chrome
+## Install or update
 
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode**.
-3. Choose **Load unpacked** and select the extracted project folder containing `manifest.json`.
-4. Click the AI Usage Monitor toolbar icon to open its dashboard. Pin the extension from Chrome’s puzzle-piece menu; right-click the dashboard tab and choose **Pin** if you want it kept at the left.
-5. Sign in to Cursor, ChatGPT, and Ollama in **this same Chrome profile** (the one where the extension is loaded). Sign-ins in other profiles do not transfer.
-6. Click **Sync now**. The extension keeps one background session tab per service so the browser session stays signed in. Do not close those tabs if you want hourly sync to keep working without re-auth. Connected or No data in range means the page was reached.
+**Chrome 148+:** Open `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**. Select the project folder containing `manifest.json`. If the extension is already installed from that folder, click **Reload** on its existing card rather than removing it or loading another copy. That preserves history and settings. Click the toolbar icon to open the dashboard.
 
-## Install in Firefox
+**Firefox 121+:** At `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on…** and select `manifest.firefox.json` from the project. This build is not signed, has not been verified in Firefox, and will not stay installed across browser restarts.
 
-1. Open `about:debugging#/runtime/this-firefox`.
-2. Choose **Load Temporary Add-on…** and select `manifest.firefox.json` from the extracted project folder.
-3. Open the AI Usage Monitor dashboard from the add-on entry, then sign in and sync in that Firefox profile.
+## How checks work
 
-Firefox’s temporary add-on installation is for testing and is removed when Firefox closes. **A persistent Firefox installation is not ready yet:** the extension needs Mozilla signing before it can be installed normally in the release browser. Chrome and Firefox keep separate local snapshots and each profile needs its own sign-ins.
+- Sign in to the providers in the profile running the extension. Click **Sync now** to confirm it can read the meters.
+- Each check opens fresh, inactive tabs for the three usage pages and closes them when done. You do not need to leave the dashboard or provider pages open. Existing tabs are not reloaded or closed. If you select a temporary tab, it is left open for you.
+- Hourly checks need an open regular browser window and a device that is awake. Alarms can run late, and they will not wake a sleeping machine. The extension checks that the alarm exists when its background worker starts and can catch up when the browser starts or becomes active again. See [Chrome's alarms documentation](https://developer.chrome.com/docs/extensions/reference/api/alarms#concepts_and_usage).
+- The toolbar shows `!` when the last check did not return all three readings. **Sync activity** separates the last check, the last completed hourly check, and export status. A check can run on time even if one provider needs attention.
+- If a session expires or a provider shows a security check, choose **Open** on its card and complete the normal sign-in flow yourself. Then click **Sync now**. If a page changes or stops rendering its meters in the background, the extension keeps the previous reading and labels it as such. It does not substitute zero. Model route suggestions ignore readings after a failed check or when they are more than two hours old.
 
-## Cross-platform runtime
+| Provider | Readings |
+| --- | --- |
+| Cursor | Plan, Cursor/Other model usage, weekly usage, and on-demand spend |
+| ChatGPT | 5-hour and weekly limits that cover Codex, Work, Workspace Agents, and ChatGPT for Excel. These are not ordinary chat or OpenAI API usage. |
+| Ollama | Cloud plan credits and weekly/session usage |
 
-The extension uses the native `chrome` API in Chrome (including Chrome on macOS) and the native `browser` API in Firefox through one shared adapter. If you replace files in an unpacked install, click **Reload** for the extension in `chrome://extensions` before reopening the dashboard. Do not open `dashboard.html` as a `file://` page; it needs the extension runtime and its local storage.
+The services count different things. Monthly history is a series of snapshots, not an exact token total across subscriptions. Model route suggestions compare available headroom, not model quality.
 
-## What it reads
+## Data and relay
 
-The collector first reuses an already-open matching provider usage page in this browser profile, preserving its signed-in session. If none is open, it creates a temporary background tab, then closes only the tab it created. It parses displayed usage summaries only:
+Snapshots, sync activity, and model routes stay in extension storage in this profile. The extension parses the visible usage page; it does not store raw page text, prompts, passwords, API keys, or cookies. An unrecognized-page diagnostic records character count and whether expected meter labels were found.
 
-- Cursor plan/model/weekly meters and on-demand amount.
-- ChatGPT’s 5-hour and weekly limits for Codex, Work, Workspace Agents, and ChatGPT for Excel. The Usage page explicitly excludes ordinary ChatGPT conversations.
-- Ollama plan credits plus weekly/session meters.
+After saving each check locally, the extension tries to send a compact snapshot to the loopback relay at `http://127.0.0.1:8792/export`. If the relay is absent, it saves the export to `Downloads/ai-usage-monitor/latest.json`. **The relay is a separate, optional installation.** When installed and configured, it can publish the usage snapshot to Contabo and send a Telegram digest. Use **Export data** to back up the dashboard's history and routes.
 
-Snapshots and model routes are stored locally in that browser profile. The extension does not save page text, prompts, model conversations, passwords, API keys, or request payloads. Permissions are limited to the three provider domains and the `storage`, `tabs`, `scripting`, and `alarms` browser APIs. No external server or analytics service is used.
+Relay installer: `bash scripts/install_telegram_relay_mac.sh` on macOS or `bash scripts/install_telegram_relay_hp.sh` on the HP. Read the script and configure its destinations before enabling it.
 
-## Reading the numbers
+## Test the extension
 
-These services do not expose one comparable token meter: each account reports its own plan-specific limits and credits. The dashboard keeps each unit separate; it does not create exact cross-service subscription token totals. Monthly history is a timeline of snapshots, not a reconstructed calendar-month total. Model-route nudges use measured remaining percentages only and do not rank model quality.
-
-Auto-sync runs hourly while Chrome is open. On browser startup, dashboard open, or Mac wake from idle, the extension repairs a missing hourly alarm and catches up if the last sync is overdue. Provider pages may take up to about 20 seconds to render during a sync. Sign-in cannot be automated past provider login screens; after you sign in once in this profile, session tabs are left open so later hourly syncs reuse that browser session. If a service shows Sign-in needed or a security check, use **Open**, finish the normal provider flow yourself, then **Sync now**. A failed-parse diagnostic includes only visible-character count and marker presence—not page text or usage values.
-
-After each successful sync the extension posts a compact export to a local relay at `http://127.0.0.1:8792/export` (and falls back to `Downloads/ai-usage-monitor/latest.json`). The relay saves the file, copies it to Contabo for Telegram asks (`usage`), and sends a tidy hourly digest to Telegram on scheduled syncs.
-
-Install the relay:
-
-```bash
-# Mac
-bash scripts/install_telegram_relay_mac.sh
-
-# HP Ubuntu
-bash scripts/install_telegram_relay_hp.sh
+```sh
+npm test
+npm run check
 ```
 
-On Contabo, Hermes answers Telegram **usage** / **AI usage** via `python3 /opt/agent-office/scripts/ai_usage/show_usage.py`. A Contabo cron can also run `scripts/ai_usage/hourly_notify.py` as a backup sender.
+For the Chrome smoke test, install Python Playwright in your development environment, then run:
 
-Use **Export data** to back up snapshots and model routes. Removing the extension or clearing its site data can delete locally stored readings. Run the included tests with `npm test` and syntax checks with `npm run check`.
+```sh
+python -m playwright install chromium
+python tests/chrome-sync-smoke.py
+```
+
+The smoke test loads the actual MV3 worker in a fresh Chromium profile with three synthetic provider pages and an isolated relay. It checks that the alarm repeats hourly, accelerates its first firing in the test, closes the dashboard, and verifies storage and tab cleanup after that native alarm runs. It does not test live provider sessions or send data to the real relay.
+
+See [design references and the roadmap](docs/roadmap.md) for the related open-source projects and what to build next.

@@ -6,27 +6,30 @@ function firstLineAfter(text, label) {
   return text.slice(at + label.length).split(/\r?\n/).map(s => s.trim()).find(Boolean) || null;
 }
 
+const METER_LABEL = /^(?:cursor models|other models|weekly usage|session usage|on-demand usage|5-hour limit|weekly limit|usage credits)\b/mi;
+
+function meterBody(text, label, maxLength = 320) {
+  // Match actual heading lines, not incidental mentions in another meter's description.
+  const heading = new RegExp(`^${label}\\b[\\t :]*`, 'mi').exec(text);
+  if (!heading) return '';
+  const body = text.slice(heading.index + heading[0].length, heading.index + heading[0].length + maxLength);
+  const next = body.search(METER_LABEL);
+  return next < 0 ? body : body.slice(0, next);
+}
+
 function percentAfter(text, label, kind) {
-  const at = text.toLowerCase().indexOf(label.toLowerCase());
-  if (at < 0) return null;
-  const slice = text.slice(at + label.length, at + label.length + 320);
-  const m = slice.match(new RegExp('([0-9]+(?:\\.[0-9]+)?)\\s*%\\s*' + kind, 'i'));
-  return m ? Number(m[1]) : null;
+  const m = meterBody(text, label).match(new RegExp('(?:^|[^\\d.-])([0-9]+(?:\\.[0-9]+)?)\\s*%\\s*' + kind + '\\b', 'i'));
+  const value = m ? Number(m[1]) : NaN;
+  return value >= 0 && value <= 100 ? value : null;
 }
 
 function resetAfter(text, label) {
-  const at = text.toLowerCase().indexOf(label.toLowerCase());
-  if (at < 0) return null;
-  const slice = text.slice(at + label.length, at + label.length + 320);
-  const m = slice.match(/resets?\s+(?:in\s+)?([^\n]+)/i);
+  const m = meterBody(text, label).match(/resets?[ \t]+(?:in[ \t]+)?([^\n]+)/i);
   return m ? m[1].trim() : null;
 }
 
 function moneyAfter(text, label) {
-  const at = text.toLowerCase().indexOf(label.toLowerCase());
-  if (at < 0) return null;
-  const slice = text.slice(at + label.length, at + label.length + 240);
-  const m = slice.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+  const m = meterBody(text, label, 240).match(/\$\s*([\d,]+(?:\.\d+)?)/);
   return m ? Number(m[1].replaceAll(',', '')) : null;
 }
 
@@ -56,8 +59,8 @@ function parseCursor(text) {
 
 function parseChatGPT(text) {
   const metrics = {
-    fiveHourRemainingPercent: percentAfter(text, '5-hour limit', 'left'),
-    weeklyRemainingPercent: percentAfter(text, 'Weekly limit', 'left')
+    fiveHourRemainingPercent: percentAfter(text, '5-hour limit', '(?:left|remaining)'),
+    weeklyRemainingPercent: percentAfter(text, 'Weekly limit', '(?:left|remaining)')
   };
   if (Object.values(metrics).every(v => v === null)) return null;
   return {
@@ -110,7 +113,7 @@ export function usagePageDiagnostics(provider, rawText) {
 
 export function parseUsage(provider, rawText) {
   if (!SOURCE_IDS.has(provider)) throw new Error(`Unknown usage source: ${provider}`);
-  const text = String(rawText || '').replace(/\r/g, '').trim();
+  const text = String(rawText || '').replace(/\r/g, '').replace(/[\u2010-\u2015]/g, '-').replace(/\u00a0/g, ' ').trim();
   if (/attention required|just a moment|cloudflare|security verification|verify you are human/i.test(text)) {
     return { provider, status: 'blocked', plan: null, period: null, metrics: {}, resets: {} };
   }

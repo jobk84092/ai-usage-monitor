@@ -70,18 +70,22 @@ function sourceMetrics(snapshot, status = {}) {
   }
   return `<div class="empty-service">No recognized usage fields.</div>`;
 }
+function readingIsCurrent(snapshot, status) {
+  return status?.status === 'ok' && Date.now() - Date.parse(snapshot?.capturedAt) <= 2 * 60 * 60 * 1000;
+}
 function renderServices() {
   $('services').innerHTML = SOURCES.map(source => {
     const snapshot = latestFor(source.id);
     const status = dataCache.sourceStatus[source.id] || {};
-    const statusText = statusLabel(status.status);
-    const updated = snapshot ? `Updated ${stamp(snapshot.capturedAt)}` : status.attemptedAt ? `Checked ${stamp(status.attemptedAt)}` : 'Not checked';
+    const current = readingIsCurrent(snapshot, status);
+    const statusText = status.status === 'ok' && !current ? 'Out of date' : statusLabel(status.status);
+    const updated = snapshot ? `${current ? 'Updated' : 'Last good reading'} ${stamp(snapshot.capturedAt)}` : status.attemptedAt ? `Checked ${stamp(status.attemptedAt)}` : 'Not checked';
     const plan = snapshot?.plan ? `<span class="service-plan">${escapeHTML(snapshot.plan)}</span>` : `<span class="service-plan">${escapeHTML(source.blurb)}</span>`;
     const warning = status.status && status.status !== 'ok' && !(status.status === 'no_data' && !snapshot) ? `<div class="empty-service">${escapeHTML(status.message || statusText)}</div>` : '';
     return `<article class="service" style="--tone:${source.color}">
       <div class="service-name"><span class="dot"></span><div><strong>${source.name}</strong><small>${escapeHTML(source.blurb)}</small></div></div>
       <div class="service-body"><div class="service-top">${plan}<span class="service-updated">${escapeHTML(updated)}</span></div><div class="metrics">${sourceMetrics(snapshot,status)}</div>${warning}</div>
-      <div class="service-action"><span class="status ${escapeHTML(status.status || 'stale')}">${escapeHTML(statusText)}</span>${status.status === 'auth_required' || status.status === 'blocked' || status.status === 'unavailable' ? `<button class="text-button" data-open-source="${source.id}" type="button">Open ${source.name}</button>` : ''}</div>
+      <div class="service-action"><span class="status ${escapeHTML(status.status || 'stale')}">${escapeHTML(statusText)}</span>${!current ? `<button class="text-button" data-open-source="${source.id}" type="button">Open ${source.name}</button>` : ''}</div>
     </article>`;
   }).join('');
 }
@@ -104,8 +108,9 @@ function renderHistory() {
 function renderRoutes() {
   const routes=dataCache.modelRoutes||[];
   if(!routes.length){$('routes').innerHTML='<div class="empty">Add a primary and optional backup. The monitor suggests the backup only when both services have measured headroom and the backup has more.</div>';return;}
+  const current=SOURCES.map(({id})=>latestFor(id)).filter(s=>s && readingIsCurrent(s,dataCache.sourceStatus[s.provider]));
   $('routes').innerHTML=routes.map(route=>{
-    const decision=chooseBudgetRoute(route,dataCache.snapshots||[]);
+    const decision=chooseBudgetRoute(route,current);
     const usingBackup=decision.selection==='backup';
     const selectedModel=usingBackup?route.backupModel:route.primaryModel;
     const selectedProvider=usingBackup?route.backupProvider:route.primaryProvider;
@@ -120,10 +125,12 @@ function renderRoutes() {
     return `<article class="route"><div class="route-head"><div><div class="route-purpose">${escapeHTML(route.purpose)}</div><div class="route-choice">Use ${escapeHTML(selectedModel)} <small>· ${escapeHTML(SOURCES.find(s=>s.id===selectedProvider)?.name||selectedProvider)}</small></div></div><div class="route-status">${escapeHTML(status)}</div></div><div class="route-sub">Primary: ${escapeHTML(route.primaryModel)} (${escapeHTML(SOURCES.find(s=>s.id===route.primaryProvider)?.name||route.primaryProvider)})${route.backupModel?` · Backup: ${escapeHTML(route.backupModel)} (${escapeHTML(SOURCES.find(s=>s.id===route.backupProvider)?.name||route.backupProvider)})`:''}<button class="delete" type="button" data-delete-route="${escapeHTML(route.id)}" aria-label="Delete route">×</button></div></article>`;
   }).join('');
 }
+const triggerLabel = trigger => ({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload',recovery:'dashboard recovery',wake:'wake from idle'})[trigger] || 'check';
 function renderSyncStatus() {
   const last=dataCache.lastSyncAt;
-  const trigger=({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload',recovery:'dashboard recovery',wake:'Mac wake'})[dataCache.lastSyncTrigger]||'';
-  const lastSync=last?`Last sync ${stamp(last)}${trigger?` (${trigger})`:''}`:'No account sync yet';
+  const trigger=triggerLabel(dataCache.lastSyncTrigger);
+  const count=dataCache.recentChecks?.[0]?.readings;
+  const lastSync=last?`Last check ${stamp(last)}${trigger?` (${trigger})`:''}${count===undefined?'':` · ${count}/${SOURCES.length} fresh readings`}`:'No account check yet';
   const alarm=dataCache.hourlyAlarm;
   const alarmStatus=dataCache.autoSync===false?'auto-sync paused':dataCache.schedulerError?'hourly alarm setup failed':!alarm?'hourly alarm missing':alarm.scheduledTime?`next hourly alarm ${stamp(alarm.scheduledTime)}`:'hourly alarm scheduled';
   const lastAlarm=dataCache.lastAlarmAt?`last alarm ${stamp(dataCache.lastAlarmAt)}`:'';
@@ -132,7 +139,12 @@ function renderSyncStatus() {
   $('syncButton').textContent=dataCache.syncing?'Syncing…':'Sync now';
   $('autoSync').checked=dataCache.autoSync!==false;
   const error=dataCache.schedulerError||dataCache.syncError;
-  $('syncFooter').textContent=error?`Sync issue: ${error}`:dataCache.autoSync===false?'Auto-sync paused; use Sync now when you want a fresh reading.':'Hourly alarm + Mac-wake recovery. Provider session tabs stay open in this Chrome profile so sign-in persists across syncs.';
+  $('syncFooter').textContent=error?`Sync issue: ${error}`:dataCache.autoSync===false?'Auto-sync is paused. Sync now still works.':'Hourly checks need an open browser window and an awake device.';
+  const hourly=dataCache.lastHourlyCheck;
+  $('scheduledResult').textContent=hourly?`Last hourly check: ${stamp(hourly.completedAt)}, ${hourly.readings}/${SOURCES.length} fresh readings.`:'No completed hourly check recorded yet.';
+  const delivery=dataCache.lastExportResult;
+  $('deliveryStatus').textContent=delivery?.reason==='relay'?'Latest export sent to the local relay.':delivery?.reason==='download'?'Latest export saved to Downloads (relay unavailable).':delivery?.ok===false?'Export failed; readings are still saved here.':'';
+  $('recentChecks').innerHTML=(dataCache.recentChecks||[]).slice(0,6).map(check=>`<li>${escapeHTML(stamp(check.completedAt))} · ${escapeHTML(triggerLabel(check.trigger))} · ${escapeHTML(check.readings)}/${SOURCES.length} fresh readings</li>`).join('');
 }
 function render() { renderSyncStatus(); renderServices(); renderHistory(); renderRoutes(); }
 async function loadData({repair=false}={}) {
@@ -173,7 +185,7 @@ $('autoSync').addEventListener('change',async event=>{
 });
 $('services').addEventListener('click',event=>{
   const button=event.target.closest('[data-open-source]');if(!button)return;
-  send({type:'open-source',source:button.dataset.openSource}).then(()=>toast('Opened the session tab. Sign in once in this Chrome profile, then Sync now.'));
+  send({type:'open-source',source:button.dataset.openSource}).then(response=>toast(response.error||'Opened the usage page. Sign in if asked, then Sync now.'));
 });
 $('routeForm').addEventListener('submit',async event=>{
   event.preventDefault();const formEl=event.currentTarget;const fd=new FormData(formEl);
@@ -190,6 +202,12 @@ $('routes').addEventListener('click',async event=>{
 });
 $('exportButton').addEventListener('click',()=>downloadJSON(`ai-usage-snapshots-${currentMonth()}.json`,{exportedAt:new Date().toISOString(),snapshots:dataCache.snapshots||[],sourceStatus:dataCache.sourceStatus||{},modelRoutes:dataCache.modelRoutes||[]}));
 $('exportMonth').addEventListener('click',()=>downloadJSON(`ai-usage-${$('monthFilter').value}.json`,{month:$('monthFilter').value,snapshots:monthSnapshots()}));
-browser.storage.onChanged.addListener(()=>loadData({repair:false}));
+let refreshTimer;
+browser.storage.onChanged.addListener((_, area)=>{
+  if(area!=='local')return;
+  clearTimeout(refreshTimer);
+  refreshTimer=setTimeout(()=>loadData(),75);
+});
+$('buildVersion').textContent=`v${browser.runtime.getManifest().version}`;
 loadData({repair:true});
-setInterval(()=>loadData({repair:true}),15*60*1000);
+setInterval(()=>loadData(),60*1000);

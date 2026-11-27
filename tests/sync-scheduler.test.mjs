@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureHourlyAlarm, dispatchHourlyAlarm, prepareDashboardSync, hourlyAlarmOptions, isSyncStuck, ALARM_NAME } from '../src/sync-scheduler.mjs';
+import { ensureHourlyAlarm, shouldCatchUp, hourlyAlarmOptions, ALARM_NAME } from '../src/sync-scheduler.mjs';
 
 test('persists alarms across sessions on Chrome 150+ without breaking older browsers', () => {
   assert.deepEqual(hourlyAlarmOptions('Mozilla/5.0 Chrome/158.0.0.0'), {
@@ -16,15 +16,6 @@ test('persists alarms across sessions on Chrome 150+ without breaking older brow
     delayInMinutes: 60,
     periodInMinutes: 60
   });
-});
-
-test('detects orphaned or overlong sync state without interrupting a fresh sync', () => {
-  const now = Date.parse('2026-11-25T12:00:00.000Z');
-  assert.equal(isSyncStuck(true, null, now), true);
-  assert.equal(isSyncStuck(true, 'not-a-date', now), true);
-  assert.equal(isSyncStuck(true, new Date(now - 6 * 60_000).toISOString(), now), true);
-  assert.equal(isSyncStuck(true, new Date(now - 60_000).toISOString(), now), false);
-  assert.equal(isSyncStuck(false, null, now), false);
 });
 
 test('creates and awaits a missing hourly alarm', async () => {
@@ -86,125 +77,20 @@ test('clears the alarm when auto-sync is disabled', async () => {
   assert.equal(cleared, ALARM_NAME);
 });
 
-test('runs an enabled hourly alarm and waits for sync completion', async () => {
-  let finished = false;
-  const pending = new Promise(resolve => setTimeout(() => { finished = true; resolve('done'); }, 10));
-  const result = await dispatchHourlyAlarm({ name: ALARM_NAME }, true, () => pending);
-  assert.equal(result, 'done');
-  assert.equal(finished, true);
+const now = Date.parse('2026-11-25T12:00:00.000Z');
+const recent = new Date(now - 5 * 60_000).toISOString();
+const overdue = new Date(now - 61 * 60_000).toISOString();
+
+test('catches up after idle only when due or interrupted and not cooling down', () => {
+  assert.equal(shouldCatchUp('wake', { lastSyncAt: recent }, now), false);
+  assert.equal(shouldCatchUp('wake', { lastSyncAt: overdue }, now), true);
+  assert.equal(shouldCatchUp('recovery', { lastSyncAt: recent, syncing: true }, now), true);
+  assert.equal(shouldCatchUp('recovery', { lastSyncAt: overdue, lastRecoveryAt: recent }, now), false);
+  assert.equal(shouldCatchUp('read-only', { lastSyncAt: overdue }, now), false);
 });
 
-test('ignores unrelated alarms and paused auto-sync', async () => {
-  let calls = 0;
-  const sync = async () => { calls++; };
-  assert.equal(await dispatchHourlyAlarm({ name: 'another-alarm' }, true, sync), null);
-  assert.equal(await dispatchHourlyAlarm({ name: ALARM_NAME }, false, sync), null);
-  assert.equal(calls, 0);
-});
-
-test('dashboard health check repairs a missing alarm and catches up an overdue sync', async () => {
-  const now = Date.parse('2026-11-25T12:00:00.000Z');
-  const alarmState = new Map();
-  const alarms = {
-    get: async name => alarmState.get(name),
-    create: async (name, info) => alarmState.set(name, { name, ...info, scheduledTime: now + 60 * 60_000 }),
-    clear: async name => alarmState.delete(name)
-  };
-  const syncCalls = [];
-
-  const result = await prepareDashboardSync({
-    alarms,
-    autoSyncEnabled: true,
-    lastSyncAt: new Date(now - 61 * 60_000).toISOString(),
-    syncing: false,
-    runSync: async trigger => { syncCalls.push(trigger); },
-    now
-  });
-
-  assert.equal(result.hourlyAlarm?.periodInMinutes, 60);
-  assert.equal(result.recoveryDue, true);
-  assert.equal(result.schedulerError, '');
-  assert.deepEqual(syncCalls, ['recovery']);
-});
-
-test('dashboard health check reports alarm failure but still catches up an overdue sync', async () => {
-  const alarms = { get: async () => undefined, create: async () => {}, clear: async () => true };
-  const syncCalls = [];
-  const now = Date.parse('2026-11-25T12:00:00.000Z');
-
-  const result = await prepareDashboardSync({
-    alarms,
-    autoSyncEnabled: true,
-    lastSyncAt: new Date(now - 61 * 60_000).toISOString(),
-    syncing: false,
-    runSync: async trigger => { syncCalls.push(trigger); },
-    now
-  });
-
-  assert.equal(result.hourlyAlarm, null);
-  assert.match(result.schedulerError, /could not be confirmed/i);
-  assert.equal(result.recoveryDue, true);
-  assert.deepEqual(syncCalls, ['recovery']);
-});
-
-test('dashboard health check clears a stuck sync and restarts even if the previous sync was recent', async () => {
-  const now = Date.parse('2026-11-25T12:00:00.000Z');
-  const alarms = {
-    get: async () => ({ name: ALARM_NAME, periodInMinutes: 60, scheduledTime: now + 60 * 60_000 }),
-    create: async () => { throw new Error('must preserve existing alarm'); },
-    clear: async () => true
-  };
-  let resetCount = 0;
-  const syncCalls = [];
-
-  const result = await prepareDashboardSync({
-    alarms,
-    autoSyncEnabled: true,
-    lastSyncAt: new Date(now - 2 * 60_000).toISOString(),
-    syncing: true,
-    syncStartedAt: new Date(now - 6 * 60_000).toISOString(),
-    resetStaleSync: async () => { resetCount++; },
-    runSync: async trigger => { syncCalls.push(trigger); },
-    now
-  });
-
-  assert.equal(result.staleSync, true);
-  assert.equal(result.recoveryDue, true);
-  assert.equal(resetCount, 1);
-  assert.deepEqual(syncCalls, ['recovery']);
-});
-
-test('dashboard health check does not start duplicate or disabled recovery syncs', async () => {
-  const existing = { name: ALARM_NAME, periodInMinutes: 60, scheduledTime: 12345 };
-  const alarms = {
-    get: async () => existing,
-    create: async () => { throw new Error('must preserve existing alarm'); },
-    clear: async () => true
-  };
-  const syncCalls = [];
-  const runSync = async trigger => syncCalls.push(trigger);
-  const staleAt = '2026-11-25T10:00:00.000Z';
-
-  const alreadySyncing = await prepareDashboardSync({
-    alarms, autoSyncEnabled: true, lastSyncAt: staleAt, syncing: true, syncStartedAt: '2026-11-25T11:59:00.000Z', runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
-  });
-  const disabled = await prepareDashboardSync({
-    alarms, autoSyncEnabled: false, lastSyncAt: staleAt, syncing: false, runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
-  });
-  const noRepair = await prepareDashboardSync({
-    alarms, autoSyncEnabled: true, lastSyncAt: staleAt, syncing: false, allowRecovery: false, runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
-  });
-  const coolingDown = await prepareDashboardSync({
-    alarms, autoSyncEnabled: true, lastSyncAt: staleAt, syncing: false,
-    lastRecoveryAt: '2026-11-25T11:50:00.000Z',
-    runSync, now: Date.parse('2026-11-25T12:00:00.000Z')
-  });
-
-  assert.equal(alreadySyncing.recoveryDue, false);
-  assert.equal(disabled.recoveryDue, false);
-  assert.equal(noRepair.recoveryDue, false);
-  assert.equal(coolingDown.recoveryDue, false);
-  assert.equal(coolingDown.coolingDown, true);
-  assert.equal(disabled.hourlyAlarm, null);
-  assert.deepEqual(syncCalls, []);
+test('startup and install can check immediately unless auto-sync is paused', () => {
+  assert.equal(shouldCatchUp('startup', { lastSyncAt: recent }, now), true);
+  assert.equal(shouldCatchUp('install', { autoSync: false }, now), false);
+  assert.equal(shouldCatchUp('wake', { autoSync: false }, now), false);
 });

@@ -1,397 +1,180 @@
 import { getExtensionApi } from '../src/extension-api.mjs';
-import { parseUsage, usagePageDiagnostics } from '../src/parse-usage.mjs';
-import { ensurePersistentUsageTab } from '../src/usage-tabs.mjs';
-import { ensureHourlyAlarm, prepareDashboardSync, dispatchHourlyAlarm, isSyncOverdue, ALARM_NAME } from '../src/sync-scheduler.mjs';
+import { collectUsage } from '../src/usage-collector.mjs';
+import { openUsageTab } from '../src/usage-tabs.mjs';
+import { ensureHourlyAlarm, shouldCatchUp, ALARM_NAME } from '../src/sync-scheduler.mjs';
 import { buildExportPayload } from '../src/telegram-summary.mjs';
 import { exportLatestSnapshot } from '../src/export-latest.mjs';
 
 const browser = getExtensionApi();
 const SOURCES = [
-  { id: 'cursor', label: 'Cursor', url: 'https://cursor.com/dashboard/spending' },
-  { id: 'chatgpt', label: 'ChatGPT', url: 'https://chatgpt.com/settings/usage' },
-  { id: 'ollama', label: 'Ollama', url: 'https://ollama.com/dashboard' }
+  { id: 'cursor', url: 'https://cursor.com/dashboard/spending' },
+  { id: 'chatgpt', url: 'https://chatgpt.com/settings/usage' },
+  { id: 'ollama', url: 'https://ollama.com/dashboard' }
 ];
-const MAX_READ_ATTEMPTS = 20;
-const READ_RETRY_MS = 1000;
+const { local } = browser.storage;
+const now = () => new Date().toISOString();
+const errorMessage = error => String(error?.message || error);
 let syncPromise = null;
+let alarmQueue = Promise.resolve();
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-async function ensureAlarm(autoSyncEnabled) {
-  if (autoSyncEnabled === undefined) {
-    const { autoSync } = await browser.storage.local.get('autoSync');
-    autoSyncEnabled = autoSync !== false;
-  }
-  return ensureHourlyAlarm(browser.alarms, autoSyncEnabled);
-}
-
-async function recordSchedulerError(error) {
-  const message = error ? String(error?.message || error) : '';
-  const { schedulerError = '' } = await browser.storage.local.get('schedulerError');
-  if (schedulerError !== message) await browser.storage.local.set({ schedulerError: message });
-}
-
-async function waitForLoad(tabId, timeoutMs = 30000) {
-  const existing = await browser.tabs.get(tabId).catch(() => null);
-  if (existing?.status === 'complete') return;
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => finish(new Error('Timed out waiting for the usage page.')), timeoutMs);
-    const listener = (updatedId, info) => {
-      if (updatedId === tabId && info.status === 'complete') finish();
-    };
-    function finish(error) {
-      clearTimeout(timer);
-      browser.tabs.onUpdated.removeListener(listener);
-      error ? reject(error) : resolve();
-    }
-    browser.tabs.onUpdated.addListener(listener);
-    browser.tabs.get(tabId).then(tab => { if (tab?.status === 'complete') finish(); }).catch(finish);
+async function reconcileAlarm(requestedEnabled) {
+  const task = alarmQueue.then(async () => {
+    if (requestedEnabled !== undefined) await local.set({ autoSync: requestedEnabled });
+    const { autoSync, schedulerError } = await local.get(['autoSync', 'schedulerError']);
+    const enabled = autoSync !== false;
+    let alarm = null;
+    let issue = '';
+    try { alarm = await ensureHourlyAlarm(browser.alarms, enabled); }
+    catch (error) { issue = errorMessage(error); }
+    if ((schedulerError || '') !== issue) await local.set({ schedulerError: issue });
+    return { enabled, alarm, issue };
   });
+  alarmQueue = task.catch(() => {});
+  return task;
 }
 
-async function readPage(tabId) {
-  const results = await browser.scripting.executeScript({
-    target: { tabId },
-    func: () => ({
-      title: document.title || '',
-      url: location.href,
-      text: (document.body?.innerText || '').slice(0, 12000)
-    })
-  });
-  return results?.[0]?.result || { title: '', url: '', text: '' };
-}
-
-function isAuthRedirect(url) {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname;
-    if (/^(authenticator\.cursor\.sh|signin\.ollama\.com|auth\.openai\.com|accounts\.google\.com)$/.test(host)) {
-      return true;
-    }
-    // ChatGPT signed-out bounce: chatgpt.com/auth/login?next=...
-    if (host === 'chatgpt.com' && /^\/auth\//i.test(parsed.pathname)) return true;
-    return false;
-  } catch { return false; }
-}
-
-async function rememberSessionTab(sourceId, tabId) {
-  const { sessionTabIds = {} } = await browser.storage.local.get('sessionTabIds');
-  if (sessionTabIds[sourceId] === tabId) return;
-  await browser.storage.local.set({ sessionTabIds: { ...sessionTabIds, [sourceId]: tabId } });
-}
-
-async function maybeFocusAuthTab(sourceId, tabId) {
-  const { authFocusAt = {} } = await browser.storage.local.get('authFocusAt');
-  const last = Date.parse(authFocusAt[sourceId] || '');
-  const recentlyFocused = Number.isFinite(last) && Date.now() - last < 12 * 60 * 60 * 1000;
-  if (recentlyFocused) return false;
-  await browser.tabs.update(tabId, { active: true }).catch(() => {});
-  await browser.storage.local.set({
-    authFocusAt: { ...authFocusAt, [sourceId]: new Date().toISOString() }
-  });
-  return true;
-}
-
-async function readUsageWithRetries(sourceId, tabId) {
-  let page = null;
-  let parsed = null;
-  for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt++) {
-    page = await readPage(tabId);
-    parsed = parseUsage(sourceId, page.text);
-    if (parsed.status !== 'unrecognized') break;
-    if (attempt + 1 < MAX_READ_ATTEMPTS) await delay(READ_RETRY_MS);
-  }
-  return { page, parsed };
-}
-
-function looksLikeEmptyShell(page, parsed) {
-  const chars = (page?.text || '').trim().length;
-  if (chars >= 800) return false;
-  if (page && isAuthRedirect(page.url)) return false;
-  // SPA shell / blank Settings title with no meters yet — not a real login wall.
-  return !parsed || parsed.status === 'unrecognized' || parsed.status === 'auth_required';
-}
-
-async function syncSource(source, sessionTabIds = {}) {
-  let tabId = null;
-  const attemptedAt = new Date().toISOString();
-  try {
-    const tab = await ensurePersistentUsageTab(browser.tabs, source, sessionTabIds[source.id]);
-    tabId = tab.tabId;
-    await rememberSessionTab(source.id, tabId);
-    await waitForLoad(tabId);
-    // ChatGPT (and similar SPAs) often report status=complete before meters render.
-    if (source.id === 'chatgpt') await delay(2500);
-    let { page, parsed } = await readUsageWithRetries(source.id, tabId);
-
-    // Stuck blank session tab: hard reload once, then re-read.
-    if (looksLikeEmptyShell(page, parsed)) {
-      await browser.tabs.reload(tabId, { bypassCache: true }).catch(() => {});
-      await waitForLoad(tabId);
-      if (source.id === 'chatgpt') await delay(3500);
-      ({ page, parsed } = await readUsageWithRetries(source.id, tabId));
-    }
-
-    const diagnostics = usagePageDiagnostics(source.id, page?.text || '');
-    const markerSummary = Object.entries(diagnostics.markers)
-      .map(([marker, present]) => `${marker}=${present ? 'yes' : 'no'}`)
-      .join(', ');
-    if (parsed?.status === 'ok') {
-      return {
-        source: source.id,
-        status: 'ok',
-        attemptedAt,
-        sessionTabId: tabId,
-        snapshot: { ...parsed, capturedAt: new Date().toISOString() }
-      };
-    }
-    if (parsed?.status === 'blocked') {
-      await maybeFocusAuthTab(source.id, tabId);
-      return {
-        source: source.id,
-        status: 'blocked',
-        attemptedAt,
-        sessionTabId: tabId,
-        message: 'The service showed a security check. Complete it in the open session tab, then Sync now.'
-      };
-    }
-    if (parsed?.status === 'no_data') {
-      return {
-        source: source.id,
-        status: 'no_data',
-        attemptedAt,
-        sessionTabId: tabId,
-        message: `The dashboard shows no numeric API usage for ${parsed.period || 'the selected range'}; no zero was recorded.`
-      };
-    }
-    if (parsed?.status === 'auth_required' || (page && isAuthRedirect(page.url))) {
-      // Tiny page with a stray "Log in" string after reload is often still a blank shell.
-      if (diagnostics.visibleChars < 800 && !isAuthRedirect(page?.url || '')) {
-        await maybeFocusAuthTab(source.id, tabId);
-        return {
-          source: source.id,
-          status: 'unrecognized',
-          attemptedAt,
-          sessionTabId: tabId,
-          message: `ChatGPT usage page stayed nearly empty after reload (${diagnostics.visibleChars} characters; markers: ${markerSummary}). Leave the open Settings → Usage tab signed in, wait for meters to appear, then Sync now.`
-        };
-      }
-      await maybeFocusAuthTab(source.id, tabId);
-      return {
-        source: source.id,
-        status: 'auth_required',
-        attemptedAt,
-        sessionTabId: tabId,
-        message: `Sign-in needed in this Chrome profile. A session tab stays open — sign in once there; hourly sync reuses that session (${diagnostics.visibleChars} characters; markers: ${markerSummary}).`
-      };
-    }
-    return {
-      source: source.id,
-      status: 'unrecognized',
-      attemptedAt,
-      sessionTabId: tabId,
-      message: `No recognized usage labels after ${MAX_READ_ATTEMPTS} checks; read ${diagnostics.visibleChars} visible characters. Markers: ${markerSummary}. No zero values were recorded.`
-    };
-  } catch (error) {
-    let url = '';
-    if (tabId !== null) url = (await browser.tabs.get(tabId).catch(() => null))?.url || '';
-    const auth = isAuthRedirect(url);
-    if (auth && tabId !== null) await maybeFocusAuthTab(source.id, tabId);
-    return {
-      source: source.id,
-      status: auth ? 'auth_required' : 'unavailable',
-      attemptedAt,
-      sessionTabId: tabId,
-      message: auth
-        ? 'Sign-in needed. The session tab was left open — finish sign-in there, then Sync again.'
-        : 'Could not read this page from the extension. Open it in your browser and retry.'
-    };
-  }
-}
-
-async function performSync(trigger = 'manual') {
-  const current = await browser.storage.local.get(['snapshots', 'sourceStatus', 'sessionTabIds']);
-  const sessionTabIds = current.sessionTabIds || {};
-  const results = await Promise.all(SOURCES.map(source => syncSource(source, sessionTabIds)));
+async function performSync(trigger) {
+  const current = await local.get(['snapshots', 'sourceStatus', 'recentChecks', 'exportHost']);
+  const results = await Promise.all(SOURCES.map(source => collectUsage(browser, source)));
   const snapshots = Array.isArray(current.snapshots) ? current.snapshots.slice() : [];
-  const sourceStatus = { ...(current.sourceStatus || {}) };
-  const nextSessionTabIds = { ...sessionTabIds };
+  const sourceStatus = {};
   for (const result of results) {
     sourceStatus[result.source] = {
       status: result.status,
       attemptedAt: result.attemptedAt,
       message: result.message || '',
-      lastSuccessAt: result.snapshot?.capturedAt || sourceStatus[result.source]?.lastSuccessAt || null,
-      sessionTabId: result.sessionTabId ?? sourceStatus[result.source]?.sessionTabId ?? null
+      lastSuccessAt: result.snapshot?.capturedAt || current.sourceStatus?.[result.source]?.lastSuccessAt || null
     };
-    if (result.sessionTabId !== undefined && result.sessionTabId !== null) {
-      nextSessionTabIds[result.source] = result.sessionTabId;
-    }
     if (result.snapshot) snapshots.push(result.snapshot);
   }
   const cutoff = Date.now() - 120 * 24 * 60 * 60 * 1000;
   const recent = snapshots.filter(item => Date.parse(item.capturedAt) >= cutoff).slice(-5000);
-  const completedAt = new Date().toISOString();
-  const { exportHost = '' } = await browser.storage.local.get('exportHost');
+  const completedAt = now();
+  const check = {
+    completedAt,
+    trigger,
+    readings: results.filter(result => result.status === 'ok').length,
+    providers: Object.fromEntries(results.map(({ source, status }) => [source, status]))
+  };
+  const recentChecks = [check, ...(Array.isArray(current.recentChecks) ? current.recentChecks : [])].slice(0, 12);
   const exportPayload = buildExportPayload({
     snapshots: recent,
     sourceStatus,
     lastSyncAt: completedAt,
     lastSyncTrigger: trigger,
-    host: exportHost || (globalThis.navigator?.userAgent?.includes('Linux') ? 'hp' : 'mac'),
+    host: current.exportHost || (globalThis.navigator?.userAgent?.includes('Linux') ? 'hp' : 'mac'),
     exportedAt: completedAt
   });
-  const exportResult = await exportLatestSnapshot({
-    payload: exportPayload,
-    downloadsApi: browser.downloads
-  }).catch(error => ({ ok: false, reason: String(error?.message || error) }));
-  await browser.storage.local.set({
-    snapshots: recent,
-    sourceStatus,
-    sessionTabIds: nextSessionTabIds,
-    lastSyncAt: completedAt,
-    lastSyncTrigger: trigger,
-    lastExport: exportPayload,
-    lastExportResult: exportResult,
-    syncing: false,
-    syncStartedAt: null,
-    syncError: ''
+  // A slow or unavailable relay must never cost the local readings.
+  await local.set({
+    snapshots: recent, sourceStatus, lastSyncAt: completedAt, lastSyncTrigger: trigger, recentChecks,
+    lastExport: exportPayload, lastExportResult: null, syncing: false, syncStartedAt: null, syncError: ''
   });
+  // The toolbar warns about a failed check without showing private usage numbers.
+  void Promise.all([
+    browser.action.setBadgeText({ text: check.readings === SOURCES.length ? '' : '!' }),
+    browser.action.setBadgeBackgroundColor({ color: '#93631f' }),
+    browser.action.setTitle({ title: `AI Usage Monitor: ${check.readings}/${SOURCES.length} fresh readings` })
+  ]).catch(() => {});
+  await exportLatestSnapshot({ payload: exportPayload, downloadsApi: browser.downloads })
+    .catch(error => ({ ok: false, reason: errorMessage(error) }))
+    .then(lastExportResult => local.set({ lastExportResult })).catch(() => {});
   return { completedAt, results: results.map(({ source, status, message }) => ({ source, status, message: message || '' })) };
 }
 
-function runSync(trigger = 'manual') {
+function runSync(trigger) {
   if (syncPromise) return syncPromise;
   syncPromise = (async () => {
-    await browser.storage.local.set({ syncing: true, syncStartedAt: new Date().toISOString(), syncError: '' });
-    try { return await performSync(trigger); }
-    catch (error) {
-      await browser.storage.local.set({ syncing: false, syncStartedAt: null, syncError: String(error?.message || error) });
+    try {
+      await local.set({ syncing: true, syncStartedAt: now(), syncError: '' });
+      return await performSync(trigger);
+    } catch (error) {
+      await local.set({ syncing: false, syncStartedAt: null, syncError: errorMessage(error) }).catch(() => {});
       throw error;
     } finally { syncPromise = null; }
   })();
   return syncPromise;
 }
 
-browser.runtime.onInstalled.addListener(async () => {
-  const { autoSync } = await browser.storage.local.get('autoSync');
-  const enabled = autoSync !== false;
-  await browser.storage.local.set({ autoSync: enabled });
-  try { await ensureAlarm(enabled); await recordSchedulerError(null); }
-  catch (error) { await recordSchedulerError(error); }
-  await runSync('install').catch(() => {});
-});
+async function clearInterruptedSync() {
+  if (!syncPromise && (await local.get('syncing')).syncing && !syncPromise) {
+    await local.set({ syncing: false, syncStartedAt: null, syncError: 'The previous check was interrupted. Use Sync now to retry.' });
+  }
+}
 
-browser.runtime.onStartup.addListener(async () => {
-  const { autoSync } = await browser.storage.local.get('autoSync');
-  const enabled = autoSync !== false;
-  try { await ensureAlarm(enabled); await recordSchedulerError(null); }
-  catch (error) { await recordSchedulerError(error); }
-  if (enabled) await runSync('startup').catch(() => {});
-});
-browser.alarms.onAlarm.addListener(async alarm => {
-  const { autoSync } = await browser.storage.local.get('autoSync');
-  try {
-    await dispatchHourlyAlarm(alarm, autoSync !== false, async trigger => {
-      await browser.storage.local.set({ lastAlarmAt: new Date().toISOString() });
-      return runSync(trigger);
-    });
-  } catch (error) { await recordSchedulerError(error).catch(() => {}); }
+async function catchUp(trigger) {
+  const { enabled } = await reconcileAlarm();
+  if (!enabled || syncPromise) return;
+  const state = await local.get(['autoSync', 'lastSyncAt', 'lastRecoveryAt', 'syncing']);
+  if (!syncPromise && shouldCatchUp(trigger, state)) {
+    if (trigger === 'wake' || trigger === 'recovery') await local.set({ lastRecoveryAt: now() });
+    return runSync(trigger);
+  }
+}
+
+browser.runtime.onInstalled.addListener(() => { void catchUp('install').catch(() => {}); });
+browser.runtime.onStartup.addListener(() => { void catchUp('startup').catch(() => {}); });
+browser.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== ALARM_NAME) return;
+  void (async () => {
+    if ((await local.get('autoSync')).autoSync === false) return;
+    await local.set({ lastAlarmAt: now() });
+    const result = await runSync('hourly');
+    await local.set({ lastHourlyCheck: { completedAt: result.completedAt, readings: result.results.filter(item => item.status === 'ok').length } });
+  })().catch(() => {});
 });
 
 if (browser.idle?.onStateChanged) {
   try { browser.idle.setDetectionInterval?.(60); } catch {}
-  browser.idle.onStateChanged.addListener(async state => {
-    if (state !== 'active') return;
-    const { autoSync, lastSyncAt, syncing } = await browser.storage.local.get(['autoSync', 'lastSyncAt', 'syncing']);
-    if (autoSync === false || syncing) return;
-    try {
-      await ensureAlarm(true);
-      await recordSchedulerError(null);
-    } catch (error) {
-      await recordSchedulerError(error);
-      return;
-    }
-    if (isSyncOverdue(lastSyncAt)) await runSync('wake').catch(() => {});
-  });
+  browser.idle.onStateChanged.addListener(state => { if (state === 'active') void catchUp('wake').catch(() => {}); });
 }
 
 browser.action.onClicked.addListener(async () => {
   const url = browser.runtime.getURL('chrome-extension/dashboard.html');
-  const { dashboardTabId } = await browser.storage.local.get('dashboardTabId');
+  const { dashboardTabId } = await local.get('dashboardTabId');
   const existing = dashboardTabId ? await browser.tabs.get(dashboardTabId).catch(() => null) : null;
   if (existing?.url === url && existing.id !== undefined) {
     await browser.tabs.update(existing.id, { active: true });
     return;
   }
   const tab = await browser.tabs.create({ url, active: true });
-  if (tab.id !== undefined) await browser.storage.local.set({ dashboardTabId: tab.id });
+  if (tab.id !== undefined) await local.set({ dashboardTabId: tab.id });
 });
 
-browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'get-data') {
-    const allowRecovery = message.repair === true;
-    browser.storage.local.get(['snapshots', 'sourceStatus', 'lastSyncAt', 'lastSyncTrigger', 'lastAlarmAt', 'syncing', 'syncStartedAt', 'autoSync', 'modelRoutes', 'syncError', 'schedulerError', 'sessionTabIds', 'lastRecoveryAt'])
-      .then(async data => {
-        const scheduler = await prepareDashboardSync({
-          alarms: browser.alarms,
-          autoSyncEnabled: data.autoSync !== false,
-          lastSyncAt: data.lastSyncAt,
-          syncing: data.syncing,
-          syncStartedAt: data.syncStartedAt,
-          lastRecoveryAt: data.lastRecoveryAt,
-          allowRecovery,
-          runSync: async trigger => {
-            if (trigger === 'recovery') {
-              await browser.storage.local.set({ lastRecoveryAt: new Date().toISOString() });
-            }
-            return runSync(trigger);
-          },
-          resetStaleSync: () => browser.storage.local.set({ syncing: false, syncStartedAt: null })
-        });
-        await recordSchedulerError(scheduler.schedulerError ? new Error(scheduler.schedulerError) : null);
-        sendResponse({ ...data, ...scheduler, schedulerError: scheduler.schedulerError });
-      })
-      .catch(error => sendResponse({ error: String(error?.message || error) }));
-    return true;
-  }
-  if (message?.type === 'sync-now') {
-    (async () => {
-      const { autoSync } = await browser.storage.local.get('autoSync');
-      if (autoSync !== false) {
-        try { await ensureAlarm(true); await recordSchedulerError(null); }
-        catch (error) { await recordSchedulerError(error); }
-      }
+async function handleMessage(message) {
+  switch (message.type) {
+    case 'get-data': {
+      if (message.repair === true) void catchUp('recovery').catch(() => {});
+      const data = await local.get(['snapshots', 'sourceStatus', 'lastSyncAt', 'lastSyncTrigger', 'lastAlarmAt', 'lastHourlyCheck', 'recentChecks', 'syncing', 'autoSync', 'modelRoutes', 'syncError', 'schedulerError', 'lastExportResult']);
+      const hourlyAlarm = await browser.alarms.get(ALARM_NAME);
+      return { ...data, syncing: Boolean(syncPromise && data.syncing), hourlyAlarm };
+    }
+    case 'sync-now':
+      await reconcileAlarm();
       return runSync('manual');
-    })().then(sendResponse).catch(error => sendResponse({ error: String(error?.message || error) }));
-    return true;
+    case 'set-auto-sync': {
+      const { issue } = await reconcileAlarm(Boolean(message.enabled));
+      return issue ? { error: issue } : { ok: true };
+    }
+    case 'open-source': {
+      const source = SOURCES.find(item => item.id === message.source);
+      if (!source) return { error: 'Unknown source.' };
+      await openUsageTab(browser.tabs, source);
+      return { ok: true };
+    }
+    case 'save-model-routes':
+      await local.set({ modelRoutes: Array.isArray(message.routes) ? message.routes : [] });
+      return { ok: true };
+    default: return { error: 'Unknown command.' };
   }
-  if (message?.type === 'set-auto-sync') {
-    const enabled = Boolean(message.enabled);
-    browser.storage.local.set({ autoSync: enabled })
-      .then(async () => {
-        try { await ensureAlarm(enabled); await recordSchedulerError(null); sendResponse({ ok: true }); }
-        catch (error) { await recordSchedulerError(error); sendResponse({ error: String(error?.message || error) }); }
-      })
-      .catch(error => sendResponse({ error: String(error?.message || error) }));
-    return true;
-  }
-  if (message?.type === 'open-source') {
-    const source = SOURCES.find(item => item.id === message.source);
-    if (!source) { sendResponse({ error: 'Unknown source.' }); return false; }
-    (async () => {
-      const { sessionTabIds = {} } = await browser.storage.local.get('sessionTabIds');
-      const tab = await ensurePersistentUsageTab(browser.tabs, source, sessionTabIds[source.id]);
-      await rememberSessionTab(source.id, tab.tabId);
-      await browser.tabs.update(tab.tabId, { active: true });
-      sendResponse({ ok: true, tabId: tab.tabId });
-    })().catch(error => sendResponse({ error: String(error?.message || error) }));
-    return true;
-  }
-  if (message?.type === 'save-model-routes') {
-    browser.storage.local.set({ modelRoutes: Array.isArray(message.routes) ? message.routes : [] })
-      .then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  return false;
+}
+
+browser.runtime.onMessage.addListener((message, sender, respond) => {
+  if (!message?.type || sender.url !== browser.runtime.getURL('chrome-extension/dashboard.html')) return false;
+  handleMessage(message).then(respond, error => respond({ error: errorMessage(error) }));
+  return true;
 });
+
+// Register listeners synchronously, then verify the alarm on every worker activation.
+void reconcileAlarm().catch(() => {});
+void clearInterruptedSync().catch(() => {});
