@@ -143,7 +143,7 @@ function renderSyncStatus() {
   const hourly=dataCache.lastHourlyCheck;
   $('scheduledResult').textContent=hourly?`Last hourly check: ${stamp(hourly.completedAt)}, ${hourly.readings}/${SOURCES.length} fresh readings.`:'No completed hourly check recorded yet.';
   const delivery=dataCache.lastExportResult;
-  $('deliveryStatus').textContent=delivery?.reason==='relay'?'Latest export sent to the local relay.':delivery?.reason==='download'?'Latest export saved to Downloads (relay unavailable).':delivery?.ok===false?'Export failed; readings are still saved here.':'';
+  $('deliveryStatus').textContent=delivery?.reason==='relay'?'Latest export sent to the local relay.':delivery?.ok===false?'Local relay unavailable. Readings are still saved here.':'';
   $('recentChecks').innerHTML=(dataCache.recentChecks||[]).slice(0,6).map(check=>`<li>${escapeHTML(stamp(check.completedAt))} · ${escapeHTML(triggerLabel(check.trigger))} · ${escapeHTML(check.readings)}/${SOURCES.length} fresh readings</li>`).join('');
 }
 function render() { renderSyncStatus(); renderServices(); renderHistory(); renderRoutes(); }

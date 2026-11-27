@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { formatTelegramSummary, buildExportPayload } from '../src/telegram-summary.mjs';
-import { exportLatestSnapshot, postToLocalRelay, downloadLatestJson } from '../src/export-latest.mjs';
+import { exportLatestSnapshot, postToLocalRelay } from '../src/export-latest.mjs';
 
 test('formats a tidy multi-provider Telegram digest', () => {
   const text = formatTelegramSummary({
@@ -62,31 +62,29 @@ test('buildExportPayload keeps only the newest snapshot per provider', () => {
   assert.equal(payload.snapshotCount, 3);
 });
 
-test('export prefers local relay and falls back to downloads', async () => {
-  const relayOk = await exportLatestSnapshot({
-    payload: { ok: true },
-    fetchImpl: async () => ({ ok: true }),
-    downloadsApi: { download: async () => { throw new Error('should not download'); } }
+test('a failed relay never starts a browser download', async () => {
+  let downloadCalls = 0;
+  const result = await exportLatestSnapshot({
+    payload: {},
+    fetchImpl: async () => ({ ok: false, status: 503 }),
+    downloadsApi: { download: async () => { downloadCalls += 1; return 7; } }
   });
-  assert.deepEqual(relayOk, { ok: true, reason: 'relay' });
-
-  const fallback = await exportLatestSnapshot({
-    payload: { hello: 'world' },
-    fetchImpl: async () => { throw new Error('relay down'); },
-    downloadsApi: {
-      download: async options => {
-        assert.match(options.filename, /ai-usage-monitor\/latest\.json/);
-        assert.equal(options.conflictAction, 'overwrite');
-        return 7;
-      }
-    }
-  });
-  assert.equal(fallback.ok, true);
-  assert.equal(fallback.reason, 'download');
-  assert.match(fallback.relayError, /relay down/);
+  assert.equal(downloadCalls, 0);
+  assert.deepEqual(result, { ok: false, reason: 'http_503' });
 });
 
-test('relay and download helpers report soft failures', async () => {
+test('exports to the local relay when it is available', async () => {
+  const result = await exportLatestSnapshot({
+    payload: { readings: 3 },
+    fetchImpl: async (_url, options) => {
+      assert.deepEqual(JSON.parse(options.body), { readings: 3 });
+      return { ok: true };
+    }
+  });
+  assert.deepEqual(result, { ok: true, reason: 'relay' });
+});
+
+test('the relay helper reports failure without throwing', async () => {
   assert.deepEqual(await postToLocalRelay('http://127.0.0.1:9/export', {}, null), { ok: false, reason: 'no_fetch' });
-  assert.deepEqual(await downloadLatestJson(null, {}), { ok: false, reason: 'no_downloads_api' });
+  assert.deepEqual(await exportLatestSnapshot({ payload: {}, fetchImpl: async () => { throw new Error('offline'); } }), { ok: false, reason: 'offline' });
 });

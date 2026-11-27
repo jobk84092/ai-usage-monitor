@@ -22,6 +22,13 @@ test('Firefox Manifest V3 uses its own scripts-based background manifest', () =>
   assert.deepEqual(firefoxManifest.browser_specific_settings.gecko.data_collection_permissions.required, ['none']);
 });
 
+test('neither extension requests the background downloads permission', () => {
+  for (const target of [manifest, firefoxManifest]) {
+    assert.ok(!target.permissions.includes('downloads'));
+    assert.ok(!target.optional_permissions?.includes('downloads'));
+  }
+});
+
 test('host access stays limited to the three monitored usage dashboards plus local Telegram relay', () => {
   assert.deepEqual(manifest.host_permissions, [
     'https://cursor.com/*',
@@ -29,6 +36,5 @@ test('host access stays limited to the three monitored usage dashboards plus loc
     'https://ollama.com/*',
     'http://127.0.0.1:8792/*'
   ]);
-  assert.ok(manifest.permissions.includes('downloads'));
   assert.doesNotMatch(manifest.description, /OpenAI API/i);
 });

@@ -24,7 +24,7 @@ PAGES = {
     '/settings/usage': 'Usage\n5-hour limit\n{value}% left\nWeekly limit\n89% left',
     '/dashboard': 'Usage credits\n$10\nWeekly usage\n{value}% used',
 }
-fixture = {'value': 25, 'signed_in': True, 'paths': set()}
+fixture = {'value': 25, 'signed_in': True, 'paths': set(), 'relay_code': 200}
 
 
 class FixtureServer(BaseHTTPRequestHandler):
@@ -46,7 +46,7 @@ class FixtureServer(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.rfile.read(int(self.headers.get('Content-Length', '0')))
-        self.reply(b'{}', 'application/json', 200 if self.path == '/export' else 404)
+        self.reply(b'{}', 'application/json', fixture['relay_code'] if self.path == '/export' else 404)
 
     def log_message(self, format, *args):
         pass
@@ -82,7 +82,7 @@ with ThreadingHTTPServer(('127.0.0.1', 0), FixtureServer) as server, TemporaryDi
         def wait_for_state(predicate, attempts=120):
             data = {}
             for _ in range(attempts):
-                data = page.evaluate('chrome.storage.local.get(["snapshots", "sourceStatus", "lastAlarmAt", "lastSyncAt", "lastSyncTrigger", "recentChecks", "syncing"])')
+                data = page.evaluate('chrome.storage.local.get(["snapshots", "sourceStatus", "lastAlarmAt", "lastSyncAt", "lastSyncTrigger", "recentChecks", "syncing", "lastExportResult"])')
                 if predicate(data):
                     return data
                 page.wait_for_timeout(250)
@@ -101,7 +101,7 @@ with ThreadingHTTPServer(('127.0.0.1', 0), FixtureServer) as server, TemporaryDi
 
         existing = context.new_page()
         existing.goto(origin + '/dashboard/spending')
-        fixture.update(value=47, signed_in=False, paths=set())
+        fixture.update(value=47, signed_in=False, paths=set(), relay_code=503)
         page.evaluate('name => chrome.alarms.create(name, {delayInMinutes: 0.65, periodInMinutes: 60})', ALARM)
         page.close()  # Do not wake the worker via the dashboard during this test.
         deadline = time.monotonic() + 65
@@ -111,8 +111,13 @@ with ThreadingHTTPServer(('127.0.0.1', 0), FixtureServer) as server, TemporaryDi
         time.sleep(4)
         page = context.new_page()
         page.goto(f'{base}/chrome-extension/dashboard.html')
-        updated = wait_for_state(lambda s: s.get('lastAlarmAt') and s.get('lastSyncTrigger') == 'hourly' and not s.get('syncing'))
+        updated = wait_for_state(lambda s: s.get('lastAlarmAt') and s.get('lastSyncTrigger') == 'hourly' and not s.get('syncing') and s.get('lastExportResult'))
         assert updated['lastSyncAt'] > initial['lastSyncAt'], updated
+        assert updated['lastExportResult'] == {'ok': False, 'reason': 'http_503'}, updated
+        assert page.evaluate("!chrome.runtime.getManifest().permissions.includes('downloads')")
+        page.locator('details summary').click()
+        assert 'Local relay unavailable' in page.locator('#deliveryStatus').inner_text()
+        print('Relay failure kept readings local and did not fall back to a browser download.', flush=True)
         assert updated['sourceStatus']['chatgpt']['status'] == 'auth_required', updated
         assert len(updated['snapshots']) == 5, updated
         assert updated['snapshots'][-2]['metrics']['cursorModelsUsedPercent'] == 47, updated
@@ -121,6 +126,11 @@ with ThreadingHTTPServer(('127.0.0.1', 0), FixtureServer) as server, TemporaryDi
         assert '25% used' in existing.locator('pre').inner_text(), 'User tab was reloaded or navigated'
         assert '2/3 fresh readings' in page.locator('#syncStatus').inner_text()
         print('Native alarm ran with dashboard closed, read fresh data, kept the last ChatGPT reading, and left the user tab alone.', flush=True)
+
+        with page.expect_download() as pending_download:
+            page.locator('#exportButton').click()
+        assert pending_download.value.suggested_filename.endswith('.json')
+        print('Explicit Export data still works.', flush=True)
 
         page.locator('#autoSync').uncheck()
         for _ in range(40):

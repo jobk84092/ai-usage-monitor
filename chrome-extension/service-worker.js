@@ -76,7 +76,7 @@ async function performSync(trigger) {
     browser.action.setBadgeBackgroundColor({ color: '#93631f' }),
     browser.action.setTitle({ title: `AI Usage Monitor: ${check.readings}/${SOURCES.length} fresh readings` })
   ]).catch(() => {});
-  await exportLatestSnapshot({ payload: exportPayload, downloadsApi: browser.downloads })
+  await exportLatestSnapshot({ payload: exportPayload })
     .catch(error => ({ ok: false, reason: errorMessage(error) }))
     .then(lastExportResult => local.set({ lastExportResult })).catch(() => {});
   return { completedAt, results: results.map(({ source, status, message }) => ({ source, status, message: message || '' })) };
