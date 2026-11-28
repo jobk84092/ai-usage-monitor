@@ -20,6 +20,7 @@ function readUsageText(origin, path) {
 function describeRead(status, source, text) {
   if (status === 'auth_required') return 'Sign-in needed. Use Open to sign in to the provider in this browser profile, then Sync now.';
   if (status === 'blocked') return 'The provider showed a security check. Use Open to complete it yourself, then Sync now.';
+  if (status === 'not_rendered') return 'ChatGPT Usage did not render. Use Open to check that the usage meters appear in this browser profile.';
   if (status === 'unavailable') return 'The usage page did not load or could not be read. Use Open to check the page, then try again.';
   const { visibleChars, markers } = usagePageDiagnostics(source, text);
   const present = Object.keys(markers).filter(key => markers[key]).join(', ') || 'none';
@@ -36,7 +37,7 @@ async function createCollectionTab(tabs, source) {
   return tab.id;
 }
 
-export async function collectUsage(browser, source, { timeoutMs = 18000, pollMs = 500 } = {}) {
+export async function collectUsage(browser, source, { timeoutMs = 18000, pollMs = 500, blankReloadAfterMs = 5000 } = {}) {
   const attemptedAt = new Date().toISOString();
   const { tabs, scripting } = browser;
   const { origin, pathname } = new URL(source.url);
@@ -45,6 +46,8 @@ export async function collectUsage(browser, source, { timeoutMs = 18000, pollMs 
   let text = '';
   let status = 'unavailable';
   let authSince = null;
+  let blankSince = null;
+  let reloaded = false;
   const onActivated = event => { if (event.tabId === tabId) adopted = true; };
   tabs.onActivated?.addListener(onActivated);
   try {
@@ -68,6 +71,21 @@ export async function collectUsage(browser, source, { timeoutMs = 18000, pollMs 
             return { source: source.id, status, attemptedAt, snapshot: { ...parsed, capturedAt: new Date().toISOString() } };
           }
           if (status === 'blocked') break;
+          const blankChatGPT = source.id === 'chatgpt' && status === 'unrecognized' && !text.trim();
+          if (blankChatGPT) {
+            status = 'not_rendered';
+            blankSince ??= Date.now();
+            if (!reloaded && !adopted && !tab.pinned && !tab.pendingUrl && Date.now() - blankSince >= blankReloadAfterMs) {
+              const current = await tabs.get(tabId);
+              if (!adopted && !current.active && !current.pinned && !current.pendingUrl &&
+                  current.status === 'complete' && sameUsagePath(current.url, source.url)) {
+                reloaded = true;
+                await tabs.reload(tabId, { bypassCache: true }).catch(() => {});
+              }
+            }
+          } else {
+            blankSince = null;
+          }
           if (status === 'auth_required') {
             // A SPA can render a signed-out shell while its session is loading.
             authSince ??= Date.now();
