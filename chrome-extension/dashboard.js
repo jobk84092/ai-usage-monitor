@@ -39,7 +39,7 @@ function metric(label, value, note = '') {
   return `<div class="metric"><span class="metric-label">${escapeHTML(label)}</span><span class="metric-value">${escapeHTML(value)}</span>${note ? `<span class="metric-note">${escapeHTML(note)}</span>` : ''}</div>`;
 }
 function statusLabel(status) {
-  return ({ ok: 'Connected', no_data: 'No data in range', auth_required: 'Sign-in needed', blocked: 'Security check', unavailable: 'Not reachable', unrecognized: 'Page not recognized' })[status] || 'Waiting for sync';
+  return ({ ok: 'Connected', no_data: 'No data in range', auth_required: 'Sign-in needed', blocked: 'Security check', unavailable: 'Not reachable', unrecognized: 'Page not recognized', not_rendered: 'Usage page did not render' })[status] || 'Waiting for sync';
 }
 function sourceMetrics(snapshot, status = {}) {
   if (!snapshot) {
@@ -125,7 +125,7 @@ function renderRoutes() {
     return `<article class="route"><div class="route-head"><div><div class="route-purpose">${escapeHTML(route.purpose)}</div><div class="route-choice">Use ${escapeHTML(selectedModel)} <small>· ${escapeHTML(SOURCES.find(s=>s.id===selectedProvider)?.name||selectedProvider)}</small></div></div><div class="route-status">${escapeHTML(status)}</div></div><div class="route-sub">Primary: ${escapeHTML(route.primaryModel)} (${escapeHTML(SOURCES.find(s=>s.id===route.primaryProvider)?.name||route.primaryProvider)})${route.backupModel?` · Backup: ${escapeHTML(route.backupModel)} (${escapeHTML(SOURCES.find(s=>s.id===route.backupProvider)?.name||route.backupProvider)})`:''}<button class="delete" type="button" data-delete-route="${escapeHTML(route.id)}" aria-label="Delete route">×</button></div></article>`;
   }).join('');
 }
-const triggerLabel = trigger => ({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload',recovery:'dashboard recovery',wake:'wake from idle'})[trigger] || 'check';
+const triggerLabel = trigger => ({manual:'manual',hourly:'hourly alarm',startup:'browser start',install:'extension reload',recovery:'automatic recovery',wake:'wake from idle'})[trigger] || 'check';
 function renderSyncStatus() {
   const last=dataCache.lastSyncAt;
   const trigger=triggerLabel(dataCache.lastSyncTrigger);

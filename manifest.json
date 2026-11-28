@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Usage Monitor",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Locally tracks usage meters from your signed-in Cursor, ChatGPT, and Ollama dashboards.",
   "minimum_chrome_version": "148",
   "permissions": ["alarms", "storage", "tabs", "scripting", "idle"],

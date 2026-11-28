@@ -24,7 +24,7 @@ PAGES = {
     '/settings/usage': 'Usage\n5-hour limit\n{value}% left\nWeekly limit\n89% left',
     '/dashboard': 'Usage credits\n$10\nWeekly usage\n{value}% used',
 }
-fixture = {'value': 25, 'signed_in': True, 'paths': set(), 'relay_code': 200}
+fixture = {'value': 25, 'signed_in': True, 'paths': set(), 'relay_code': 200, 'chatgpt_blank_once': True, 'chatgpt_loads': 0}
 
 
 class FixtureServer(BaseHTTPRequestHandler):
@@ -42,7 +42,19 @@ class FixtureServer(BaseHTTPRequestHandler):
             return self.reply(b'', 'text/plain', 404)
         fixture['paths'].add(path)
         text = 'Log in\nContinue with email' if path == '/settings/usage' and not fixture['signed_in'] else PAGES[path].format(value=fixture['value'])
-        self.reply(f'<html><body><pre>{escape(text)}</pre></body></html>'.encode(), 'text/html')
+        markup = f'<pre>{escape(text)}</pre>'
+        if path == '/settings/usage':
+            fixture['chatgpt_loads'] += 1
+            if fixture['chatgpt_blank_once'] and fixture['signed_in']:
+                # This tab's first document never renders, but a reload in that tab does.
+                markup = f"""<script>
+                    if (sessionStorage.getItem('usage-first-document')) {{
+                        document.body.insertAdjacentHTML('afterbegin', {json.dumps(markup)});
+                    }} else {{
+                        sessionStorage.setItem('usage-first-document', '1');
+                    }}
+                </script>"""
+        self.reply(f'<html><body>{markup}</body></html>'.encode(), 'text/html')
 
     def do_POST(self):
         self.rfile.read(int(self.headers.get('Content-Length', '0')))
@@ -97,7 +109,10 @@ with ThreadingHTTPServer(('127.0.0.1', 0), FixtureServer) as server, TemporaryDi
         assert provider_tabs() == [], 'Initial check left provider tabs open'
         alarm = page.evaluate('name => chrome.alarms.get(name)', ALARM)
         assert alarm and alarm['periodInMinutes'] == 60, alarm
-        print('Initial check captured three readings with no persistent provider tabs.', flush=True)
+        assert fixture['chatgpt_loads'] == 2, 'Blank ChatGPT page was not retried exactly once'
+        print('Initial check recovered the blank ChatGPT tab and left no provider tabs open.', flush=True)
+
+        fixture['chatgpt_blank_once'] = False
 
         existing = context.new_page()
         existing.goto(origin + '/dashboard/spending')

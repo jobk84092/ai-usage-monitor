@@ -86,7 +86,10 @@ function runSync(trigger) {
   if (syncPromise) return syncPromise;
   syncPromise = (async () => {
     try {
-      await local.set({ syncing: true, syncStartedAt: now(), syncError: '' });
+      const startedAt = now();
+      const started = { syncing: true, syncStartedAt: startedAt, syncError: '' };
+      if (trigger === 'wake' || trigger === 'recovery') started.lastRecoveryAt = startedAt;
+      await local.set(started);
       return await performSync(trigger);
     } catch (error) {
       await local.set({ syncing: false, syncStartedAt: null, syncError: errorMessage(error) }).catch(() => {});
@@ -96,20 +99,18 @@ function runSync(trigger) {
   return syncPromise;
 }
 
-async function clearInterruptedSync() {
-  if (!syncPromise && (await local.get('syncing')).syncing && !syncPromise) {
-    await local.set({ syncing: false, syncStartedAt: null, syncError: 'The previous check was interrupted. Use Sync now to retry.' });
-  }
+async function recoverInterruptedSync() {
+  const state = await local.get(['autoSync', 'syncing', 'lastRecoveryAt']);
+  if (syncPromise || state.syncing !== true) return;
+  if (shouldCatchUp('recovery', state)) return runSync('recovery');
+  await local.set({ syncing: false, syncStartedAt: null, syncError: 'The previous check was interrupted. Use Sync now to retry.' });
 }
 
 async function catchUp(trigger) {
   const { enabled } = await reconcileAlarm();
   if (!enabled || syncPromise) return;
   const state = await local.get(['autoSync', 'lastSyncAt', 'lastRecoveryAt', 'syncing']);
-  if (!syncPromise && shouldCatchUp(trigger, state)) {
-    if (trigger === 'wake' || trigger === 'recovery') await local.set({ lastRecoveryAt: now() });
-    return runSync(trigger);
-  }
+  if (!syncPromise && shouldCatchUp(trigger, state)) return runSync(trigger);
 }
 
 browser.runtime.onInstalled.addListener(() => { void catchUp('install').catch(() => {}); });
@@ -177,4 +178,4 @@ browser.runtime.onMessage.addListener((message, sender, respond) => {
 
 // Register listeners synchronously, then verify the alarm on every worker activation.
 void reconcileAlarm().catch(() => {});
-void clearInterruptedSync().catch(() => {});
+void recoverInterruptedSync().catch(() => {});
